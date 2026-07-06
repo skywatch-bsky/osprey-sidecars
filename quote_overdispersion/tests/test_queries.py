@@ -77,6 +77,20 @@ class TestDailyAggregationQuery:
         assert 'calendar' in query
         assert 'dense' in query
 
+    def test_densified_pipeline_structural_checks_daily(self, base_config: AnalysisConfig) -> None:
+        """Structural checks for densified pipeline: CROSS JOIN, LEFT JOIN, coalesce, bucket >= first_seen, numbers()."""
+        query = daily_aggregation_query(base_config)
+        # CROSS JOIN for calendar densification
+        assert 'CROSS JOIN calendar c' in query
+        # LEFT JOIN for raw_shares with coalesce fallback
+        assert 'LEFT JOIN raw_shares r' in query
+        # coalesce for missing shares
+        assert 'coalesce(r.total_shares, 0)' in query
+        # bucket >= first_seen condition for date range
+        assert 'c.bucket >= e.first_seen' in query
+        # numbers() for daily densification (baseline_days + 1)
+        assert f'numbers({base_config.baseline_days + 1})' in query
+
     def test_uses_median_exact_for_volume(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'medianExact(total_shares) OVER w' in query
@@ -182,6 +196,20 @@ class TestHourlyAggregationQuery:
         assert 'entities' in query
         assert 'calendar' in query
         assert 'dense' in query
+
+    def test_densified_pipeline_structural_checks_hourly(self, base_config: AnalysisConfig) -> None:
+        """Structural checks for densified pipeline: CROSS JOIN, LEFT JOIN, coalesce, bucket >= first_seen, numbers()."""
+        query = hourly_aggregation_query(base_config)
+        # CROSS JOIN for calendar densification
+        assert 'CROSS JOIN calendar c' in query
+        # LEFT JOIN for raw_shares with coalesce fallback
+        assert 'LEFT JOIN raw_shares r' in query
+        # coalesce for missing shares
+        assert 'coalesce(r.total_shares, 0)' in query
+        # bucket >= first_seen condition for date range
+        assert 'c.bucket >= e.first_seen' in query
+        # numbers() for hourly densification ((baseline_days + 1) * 24 hours)
+        assert f'numbers({(base_config.baseline_days + 1) * 24})' in query
 
     def test_hour_of_day_matching(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)

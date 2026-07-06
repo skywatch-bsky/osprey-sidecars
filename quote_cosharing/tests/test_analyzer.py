@@ -341,7 +341,7 @@ class TestBuildGraph:
         assert graph.vs['name'] == ['did:c', 'did:d']
 
     def test_build_graph_batch_vs_per_edge_loop_equivalence(self, base_date: date) -> None:
-        """Test batch construction yields same result as per-edge loop on duplicate-free input."""
+        """Test AC6.4: batch edge construction produces identical graph to per-edge loop with per-edge keyed-dict comparison."""
         import igraph as ig
 
         def build_graph_per_edge_loop(pairs: list[PairRow], min_edge_weight: int) -> ig.Graph:
@@ -400,13 +400,31 @@ class TestBuildGraph:
         assert batch_graph.ecount() == loop_graph.ecount()
         assert batch_graph.vs['name'] == loop_graph.vs['name']
 
-        batch_weights = sorted(batch_graph.es['weight'])
-        loop_weights = sorted(loop_graph.es['weight'])
-        assert batch_weights == loop_weights
+        # Per-edge keyed-dict comparison
+        batch_edges = {}
+        for edge in batch_graph.es:
+            names = tuple(sorted([batch_graph.vs[edge.source]['name'], batch_graph.vs[edge.target]['name']]))
+            batch_edges[names] = {
+                'weight': edge['weight'],
+                'newman_weight': edge['newman_weight'],
+                'shared_uris': edge['shared_uris'],
+            }
 
-        batch_newman = sorted(batch_graph.es['newman_weight'])
-        loop_newman = sorted(loop_graph.es['newman_weight'])
-        assert batch_newman == loop_newman
+        loop_edges = {}
+        for edge in loop_graph.es:
+            names = tuple(sorted([loop_graph.vs[edge.source]['name'], loop_graph.vs[edge.target]['name']]))
+            loop_edges[names] = {
+                'weight': edge['weight'],
+                'newman_weight': edge['newman_weight'],
+                'shared_uris': edge['shared_uris'],
+            }
+
+        # Compare
+        assert batch_edges.keys() == loop_edges.keys()
+        for names in batch_edges:
+            assert batch_edges[names]['weight'] == loop_edges[names]['weight']
+            assert batch_edges[names]['newman_weight'] == pytest.approx(loop_edges[names]['newman_weight'])
+            assert batch_edges[names]['shared_uris'] == loop_edges[names]['shared_uris']
 
 
 class TestClusterGraph:

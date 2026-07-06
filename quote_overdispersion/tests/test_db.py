@@ -378,6 +378,86 @@ class TestScoredResult:
         assert result_normal.is_anomaly == 0
 
 
+class TestInsertColumnList:
+    def test_insert_column_list_with_q_values(self) -> None:
+        """Verify the insert column list contains exactly 22 names with q-values in correct positions."""
+        mock_client = MagicMock()
+        db = QuoteOverdispersionDb.__new__(QuoteOverdispersionDb)
+        db._client = mock_client
+
+        now = datetime(2026, 3, 20, 12, 0, 0)
+        bucket_start = datetime(2026, 3, 20, 0, 0, 0)
+        result = ScoredResult(
+            run_timestamp=now,
+            granularity='daily',
+            quoted_uri='at://did:plc:abc1/app.bsky.feed.post/xyz',
+            quoted_author_did='did:plc:abc1',
+            bucket_start=bucket_start,
+            total_shares=42,
+            unique_sharers=15,
+            sharer_density=0.85,
+            expected_volume_lambda=3.5,
+            expected_density_lambda=0.78,
+            volume_p_value=0.001,
+            volume_q_value=0.002,
+            density_p_value=0.005,
+            density_q_value=0.010,
+            is_anomaly=1,
+            baseline_source='entity',
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            rolling_volume_median=2.5,
+            rolling_volume_variance=4.2,
+            rolling_density_mean=0.78,
+            rolling_density_variance=0.05,
+        )
+
+        db.insert_results('test_table', [result])
+
+        # Verify insert was called
+        assert mock_client.insert.called
+        call_args = mock_client.insert.call_args
+
+        # Check column names (22 total)
+        column_names = call_args[1]['column_names']
+        assert len(column_names) == 22
+        assert column_names == [
+            'run_timestamp',
+            'granularity',
+            'quoted_uri',
+            'quoted_author_did',
+            'bucket_start',
+            'total_shares',
+            'unique_sharers',
+            'sharer_density',
+            'expected_volume_lambda',
+            'expected_density_lambda',
+            'rolling_volume_median',
+            'rolling_volume_variance',
+            'rolling_density_mean',
+            'rolling_density_variance',
+            'volume_p_value',
+            'volume_q_value',
+            'density_p_value',
+            'density_q_value',
+            'is_anomaly',
+            'baseline_source',
+            'baseline_days_available',
+            'sample_dids',
+        ]
+
+        # Verify data matches column order
+        data = call_args[1]['data']
+        assert len(data) == 1
+        row_data = data[0]
+        assert row_data[0] == now  # run_timestamp
+        assert row_data[1] == 'daily'  # granularity
+        assert row_data[14] == 0.001  # volume_p_value
+        assert row_data[15] == 0.002  # volume_q_value
+        assert row_data[16] == 0.005  # density_p_value
+        assert row_data[17] == 0.010  # density_q_value
+
+
 class TestQuoteOverdispersionDb:
     def test_fetch_coerces_date_to_datetime(self) -> None:
         """ClickHouse toDate() returns datetime.date; bucket_start must be datetime."""

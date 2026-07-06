@@ -264,6 +264,70 @@ class TestScoredResult:
         assert result.q_value == 0.005
 
 
+class TestInsertColumnList:
+    def test_insert_column_list_with_q_values(self) -> None:
+        """Verify the insert column list contains exactly 15 names with q_value immediately after p_value."""
+        mock_client = MagicMock()
+        db = SignupAnomalyDb.__new__(SignupAnomalyDb)
+        db._client = mock_client
+
+        now = datetime(2026, 3, 20, 12, 0, 0)
+        result = ScoredResult(
+            run_timestamp=now,
+            granularity='daily',
+            pds_host='example.com',
+            observed_count=42,
+            distinct_accounts=40,
+            expected_lambda=3.5,
+            p_value=0.001,
+            q_value=0.005,
+            is_anomaly=1,
+            baseline_source='entity',
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            rolling_mean=3.5,
+            rolling_variance=0.75,
+            dispersion_index=1.5,
+        )
+
+        db.insert_results('test_table', [result])
+
+        # Verify insert was called
+        assert mock_client.insert.called
+        call_args = mock_client.insert.call_args
+
+        # Check column names (15 total)
+        column_names = call_args[1]['column_names']
+        assert len(column_names) == 15
+        assert column_names == [
+            'run_timestamp',
+            'granularity',
+            'pds_host',
+            'observed_count',
+            'distinct_accounts',
+            'expected_lambda',
+            'p_value',
+            'q_value',
+            'is_anomaly',
+            'baseline_source',
+            'baseline_days_available',
+            'sample_dids',
+            'rolling_mean',
+            'rolling_variance',
+            'dispersion_index',
+        ]
+
+        # Verify data matches column order
+        data = call_args[1]['data']
+        assert len(data) == 1
+        row_data = data[0]
+        assert row_data[0] == now  # run_timestamp
+        assert row_data[1] == 'daily'  # granularity
+        assert row_data[2] == 'example.com'  # pds_host
+        assert row_data[6] == 0.001  # p_value
+        assert row_data[7] == 0.005  # q_value
+
+
 class TestFetchAggregatedRows:
     def test_fetch_mapping_maps_columns_in_correct_order(self) -> None:
         """Verify that fetch_aggregated_rows maps tuple columns in exact SELECT order.

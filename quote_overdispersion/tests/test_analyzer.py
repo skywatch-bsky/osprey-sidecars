@@ -13,7 +13,9 @@ from quote_overdispersion.analyzer import (
     score_rows,
 )
 from quote_overdispersion.config import AnalysisConfig
+from quote_overdispersion.counts import count_p_value
 from quote_overdispersion.db import AggregatedRow, ScoredResult
+from quote_overdispersion.density import density_p_value
 
 
 @pytest.fixture
@@ -607,6 +609,117 @@ class TestScoreRows:
         assert results[1].volume_q_value >= results[1].volume_p_value
         assert results[0].density_q_value >= results[0].density_p_value
         assert results[1].density_q_value >= results[1].density_p_value
+
+    def test_computes_volume_p_value(
+        self,
+        base_config: AnalysisConfig,
+        run_timestamp: datetime,
+    ) -> None:
+        """score_row should compute volume_p_value using count_p_value with derived inputs."""
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=10,
+            unique_sharers=5,
+            sharer_density=0.5,
+            rolling_volume_median=5.0,
+            rolling_volume_mean=5.0,
+            rolling_volume_variance=7.5,
+            rolling_density_mean=0.5,
+            rolling_density_variance=0.05,
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            population_volume_median=None,
+            population_volume_dispersion=None,
+            population_density_median=None,
+            population_density_variance=None,
+        )
+        result = score_row(row, base_config, 'daily', run_timestamp)
+        # phi = 7.5 / 5.0 = 1.5 > 1, so NB is used
+        # volume_variance = 1.5 * 5.0 = 7.5
+        expected_volume_p = count_p_value(10, 5.0, 7.5)
+        assert result.volume_p_value == pytest.approx(expected_volume_p)
+
+    def test_computes_density_p_value(
+        self,
+        base_config: AnalysisConfig,
+        run_timestamp: datetime,
+    ) -> None:
+        """score_row should compute density_p_value using density_p_value function."""
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=10,
+            unique_sharers=9,
+            sharer_density=0.9,
+            rolling_volume_median=5.0,
+            rolling_volume_mean=5.0,
+            rolling_volume_variance=7.5,
+            rolling_density_mean=0.5,
+            rolling_density_variance=0.05,
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            population_volume_median=None,
+            population_volume_dispersion=None,
+            population_density_median=None,
+            population_density_variance=None,
+        )
+        result = score_row(row, base_config, 'daily', run_timestamp)
+        expected_density_p = density_p_value(9, 10, 0.5, 0.05)
+        assert result.density_p_value == pytest.approx(expected_density_p)
+
+    def test_ac2_2_anomaly_equals_q_value_comparison(
+        self,
+        base_config: AnalysisConfig,
+        run_timestamp: datetime,
+    ) -> None:
+        """AC2.2: is_anomaly == (1 if volume_q < threshold OR density_q < threshold else 0)."""
+        # Test case 1: both q-values exceed threshold -> is_anomaly = 0
+        row1 = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=2,
+            unique_sharers=2,
+            sharer_density=1.0,
+            rolling_volume_median=5.0,
+            rolling_volume_mean=5.0,
+            rolling_volume_variance=5.0,
+            rolling_density_mean=0.5,
+            rolling_density_variance=0.05,
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            population_volume_median=None,
+            population_volume_dispersion=None,
+            population_density_median=None,
+            population_density_variance=None,
+        )
+        result1 = score_row(row1, base_config, 'daily', run_timestamp)
+        threshold = base_config.volume_p_threshold
+        expected_anomaly1 = 1 if (result1.volume_q_value < threshold or result1.density_q_value < threshold) else 0
+        assert result1.is_anomaly == expected_anomaly1
+
+        # Test case 2: volume_q-value below threshold -> is_anomaly = 1
+        row2 = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz2',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=5.0,
+            rolling_volume_mean=5.0,
+            rolling_volume_variance=7.5,
+            rolling_density_mean=0.5,
+            rolling_density_variance=0.05,
+            baseline_days_available=7,
+            sample_dids=['did1'],
+            population_volume_median=None,
+            population_volume_dispersion=None,
+            population_density_median=None,
+            population_density_variance=None,
+        )
+        result2 = score_row(row2, base_config, 'daily', run_timestamp)
+        expected_anomaly2 = 1 if (result2.volume_q_value < threshold or result2.density_q_value < threshold) else 0
+        assert result2.is_anomaly == expected_anomaly2
 
     def test_processes_empty_list(
         self,
