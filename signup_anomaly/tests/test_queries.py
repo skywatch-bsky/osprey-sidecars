@@ -102,7 +102,10 @@ class TestDailyAggregationQuery:
     def test_population_stats_computes_unbiased_median(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'median(rolling_median) AS population_median_lambda' in query
-        assert 'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index' in query
+        assert (
+            'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index'
+            in query
+        )
 
     def test_includes_dispersion_index_computation(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
@@ -210,7 +213,10 @@ class TestHourlyAggregationQuery:
 
     def test_includes_population_dispersion_median_formula(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index' in query
+        assert (
+            'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index'
+            in query
+        )
 
     def test_includes_dispersion_index_computation(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)

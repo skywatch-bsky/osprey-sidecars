@@ -15,6 +15,7 @@ class AggregatedRow:
     pds_host: str
     observed_count: int
     distinct_accounts: int
+    rolling_median: float | None
     rolling_mean: float | None
     baseline_days_available: int
     sample_dids: list[str]
@@ -33,6 +34,7 @@ class ScoredResult:
     distinct_accounts: int
     expected_lambda: float
     p_value: float
+    q_value: float
     is_anomaly: int
     baseline_source: str
     baseline_days_available: int
@@ -64,13 +66,14 @@ class SignupAnomalyDb:
                     pds_host=row[0],
                     observed_count=int(row[1]),
                     distinct_accounts=int(row[2]),
-                    rolling_mean=float(row[3]) if row[3] is not None else None,
-                    baseline_days_available=int(row[4]),
-                    sample_dids=list(row[5]) if row[5] else [],
-                    population_median_lambda=float(row[6]) if row[6] is not None else None,
-                    rolling_variance=float(row[7]) if row[7] is not None else None,
-                    dispersion_index=float(row[8]) if row[8] is not None else None,
-                    population_dispersion_index=float(row[9]) if row[9] is not None else None,
+                    rolling_median=float(row[3]) if row[3] is not None else None,
+                    rolling_mean=float(row[4]) if row[4] is not None else None,
+                    baseline_days_available=int(row[5]),
+                    sample_dids=list(row[6]) if row[6] else [],
+                    population_median_lambda=float(row[7]) if row[7] is not None else None,
+                    rolling_variance=float(row[8]) if row[8] is not None else None,
+                    dispersion_index=float(row[9]) if row[9] is not None else None,
+                    population_dispersion_index=float(row[10]) if row[10] is not None else None,
                 )
             )
         return rows
@@ -84,6 +87,7 @@ class SignupAnomalyDb:
             'distinct_accounts',
             'expected_lambda',
             'p_value',
+            'q_value',
             'is_anomaly',
             'baseline_source',
             'baseline_days_available',
@@ -101,6 +105,7 @@ class SignupAnomalyDb:
                 r.distinct_accounts,
                 r.expected_lambda,
                 r.p_value,
+                r.q_value,
                 r.is_anomaly,
                 r.baseline_source,
                 r.baseline_days_available,
