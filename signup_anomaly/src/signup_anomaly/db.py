@@ -68,11 +68,11 @@ class SignupAnomalyDb:
                     distinct_accounts=int(row[2]),
                     rolling_median=float(row[3]) if row[3] is not None else None,
                     rolling_mean=float(row[4]) if row[4] is not None else None,
-                    baseline_days_available=int(row[5]),
-                    sample_dids=list(row[6]) if row[6] else [],
-                    population_median_lambda=float(row[7]) if row[7] is not None else None,
-                    rolling_variance=float(row[8]) if row[8] is not None else None,
-                    dispersion_index=float(row[9]) if row[9] is not None else None,
+                    rolling_variance=float(row[5]) if row[5] is not None else None,
+                    dispersion_index=float(row[6]) if row[6] is not None else None,
+                    baseline_days_available=int(row[7]),
+                    sample_dids=list(row[8]) if row[8] else [],
+                    population_median_lambda=float(row[9]) if row[9] is not None else None,
                     population_dispersion_index=float(row[10]) if row[10] is not None else None,
                 )
             )

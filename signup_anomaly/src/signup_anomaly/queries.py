@@ -90,7 +90,7 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
             b.rolling_mean,
             b.rolling_variance,
             if(b.rolling_mean > 0, b.rolling_variance / b.rolling_mean, NULL) AS dispersion_index,
-            b.baseline_days_available,
+            toUInt16(b.baseline_days_available) AS baseline_days_available,
             b.sample_dids,
             p.population_median_lambda,
             p.population_dispersion_index
