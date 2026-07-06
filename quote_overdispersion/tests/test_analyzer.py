@@ -6,9 +6,8 @@ from datetime import datetime
 import pytest
 
 from quote_overdispersion.analyzer import (
-    compute_density_p_value,
-    compute_p_value,
     determine_baseline,
+    determine_variances,
     extract_quoted_author_did,
     score_row,
     score_rows,
@@ -67,46 +66,6 @@ class TestExtractQuotedAuthorDid:
         assert result == ''
 
 
-class TestComputePValue:
-    def test_ac1_5_zero_lambda_returns_one(self) -> None:
-        result = compute_p_value(100, 0)
-        assert result == 1.0
-
-    def test_negative_lambda_returns_one(self) -> None:
-        result = compute_p_value(100, -1)
-        assert result == 1.0
-
-    def test_high_observed_low_lambda_gives_low_pvalue(self) -> None:
-        result = compute_p_value(50, 5)
-        assert result < 0.001
-
-    def test_near_mean_gives_high_pvalue(self) -> None:
-        result = compute_p_value(5, 5)
-        assert result > 0.3
-
-    def test_zero_observed_gives_one(self) -> None:
-        result = compute_p_value(0, 10)
-        assert result > 0.99
-
-
-class TestComputeDensityPValue:
-    def test_zero_expected_returns_one(self) -> None:
-        result = compute_density_p_value(0.9, 0, 100)
-        assert result == 1.0
-
-    def test_insufficient_observations_returns_one(self) -> None:
-        result = compute_density_p_value(0.9, 0.5, 1)
-        assert result == 1.0
-
-    def test_high_density_vs_low_expected_gives_low_pvalue(self) -> None:
-        result = compute_density_p_value(0.9, 0.1, 100)
-        assert result < 0.01
-
-    def test_density_below_expected_returns_one(self) -> None:
-        result = compute_density_p_value(0.1, 0.5, 100)
-        assert result == 1.0
-
-
 class TestDetermineBaseline:
     def test_ac1_3_entity_baseline_used_when_sufficient(self) -> None:
         row = AggregatedRow(
@@ -115,12 +74,17 @@ class TestDetermineBaseline:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.2,
-            rolling_volume_mean=30.0,
+            rolling_volume_median=30.0,
+            rolling_volume_mean=32.0,
+            rolling_volume_variance=40.0,
             rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
             baseline_days_available=5,
             sample_dids=['did1', 'did2'],
             population_volume_median=10.0,
+            population_volume_dispersion=1.5,
             population_density_median=0.1,
+            population_density_variance=0.02,
         )
         volume_lambda, density_lambda, source = determine_baseline(row, cold_start_min_days=3)
         assert volume_lambda == 30.0
@@ -134,12 +98,17 @@ class TestDetermineBaseline:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.2,
-            rolling_volume_mean=30.0,
+            rolling_volume_median=30.0,
+            rolling_volume_mean=32.0,
+            rolling_volume_variance=40.0,
             rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
             baseline_days_available=2,
             sample_dids=['did1', 'did2'],
             population_volume_median=10.0,
+            population_volume_dispersion=1.5,
             population_density_median=0.15,
+            population_density_variance=0.03,
         )
         volume_lambda, density_lambda, source = determine_baseline(row, cold_start_min_days=3)
         assert volume_lambda == 10.0
@@ -153,12 +122,17 @@ class TestDetermineBaseline:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.2,
+            rolling_volume_median=None,
             rolling_volume_mean=None,
+            rolling_volume_variance=None,
             rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
             baseline_days_available=5,
             sample_dids=['did1', 'did2'],
             population_volume_median=10.0,
+            population_volume_dispersion=1.5,
             population_density_median=0.15,
+            population_density_variance=0.03,
         )
         volume_lambda, density_lambda, source = determine_baseline(row, cold_start_min_days=3)
         assert volume_lambda == 10.0
@@ -172,12 +146,17 @@ class TestDetermineBaseline:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.2,
+            rolling_volume_median=None,
             rolling_volume_mean=None,
+            rolling_volume_variance=None,
             rolling_density_mean=None,
+            rolling_density_variance=None,
             baseline_days_available=2,
             sample_dids=['did1', 'did2'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         volume_lambda, density_lambda, source = determine_baseline(row, cold_start_min_days=3)
         assert volume_lambda == 0.0
@@ -191,17 +170,93 @@ class TestDetermineBaseline:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.2,
-            rolling_volume_mean=30.0,
+            rolling_volume_median=30.0,
+            rolling_volume_mean=32.0,
+            rolling_volume_variance=40.0,
             rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
             baseline_days_available=3,
             sample_dids=['did1', 'did2'],
             population_volume_median=10.0,
+            population_volume_dispersion=1.5,
             population_density_median=0.15,
+            population_density_variance=0.03,
         )
         volume_lambda, density_lambda, source = determine_baseline(row, cold_start_min_days=3)
         assert volume_lambda == 30.0
         assert density_lambda == 0.25
         assert source == 'entity'
+
+
+class TestDetermineVariances:
+    def test_entity_baseline_returns_rolling_variances(self) -> None:
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=30.0,
+            rolling_volume_mean=32.0,
+            rolling_volume_variance=40.0,
+            rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
+            baseline_days_available=5,
+            sample_dids=['did1'],
+            population_volume_median=10.0,
+            population_volume_dispersion=1.5,
+            population_density_median=0.1,
+            population_density_variance=0.02,
+        )
+        volume_var, density_var = determine_variances(row, 'entity')
+        assert volume_var == 40.0
+        assert density_var == 0.05
+
+    def test_population_baseline_derives_variances(self) -> None:
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=None,
+            rolling_volume_mean=None,
+            rolling_volume_variance=None,
+            rolling_density_mean=None,
+            rolling_density_variance=None,
+            baseline_days_available=2,
+            sample_dids=['did1'],
+            population_volume_median=10.0,
+            population_volume_dispersion=2.0,
+            population_density_median=0.1,
+            population_density_variance=0.03,
+        )
+        volume_var, density_var = determine_variances(row, 'population')
+        assert volume_var == 20.0  # 2.0 * 10.0
+        assert density_var == 0.03
+
+    def test_population_baseline_with_none_population_dispersion(self) -> None:
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=None,
+            rolling_volume_mean=None,
+            rolling_volume_variance=None,
+            rolling_density_mean=None,
+            rolling_density_variance=None,
+            baseline_days_available=2,
+            sample_dids=['did1'],
+            population_volume_median=10.0,
+            population_volume_dispersion=None,
+            population_density_median=0.1,
+            population_density_variance=0.03,
+        )
+        volume_var, density_var = determine_variances(row, 'population')
+        assert volume_var is None
+        assert density_var == 0.03
 
 
 class TestScoreRow:
@@ -216,16 +271,23 @@ class TestScoreRow:
             total_shares=50,
             unique_sharers=20,
             sharer_density=0.4,
-            rolling_volume_mean=5.0,
+            rolling_volume_median=5.0,
+            rolling_volume_mean=5.5,
+            rolling_volume_variance=8.0,
             rolling_density_mean=0.1,
+            rolling_density_variance=0.02,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         result = score_row(row, base_config, 'daily', run_timestamp)
         assert result.volume_p_value < base_config.volume_p_threshold
-        assert result.is_anomaly == 1
+        assert result.volume_q_value == 1.0  # provisional
+        assert result.density_q_value == 1.0  # provisional
+        assert result.is_anomaly == 0  # provisional (not set yet)
 
     def test_ac1_2_density_anomaly_sets_flag(
         self,
@@ -238,16 +300,23 @@ class TestScoreRow:
             total_shares=10,
             unique_sharers=10,
             sharer_density=0.9,
-            rolling_volume_mean=15.0,
+            rolling_volume_median=15.0,
+            rolling_volume_mean=16.0,
+            rolling_volume_variance=20.0,
             rolling_density_mean=0.1,
+            rolling_density_variance=0.02,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         result = score_row(row, base_config, 'daily', run_timestamp)
         assert result.density_p_value < base_config.density_p_threshold
-        assert result.is_anomaly == 1
+        assert result.volume_q_value == 1.0  # provisional
+        assert result.density_q_value == 1.0  # provisional
+        assert result.is_anomaly == 0  # provisional (not set yet)
 
     def test_both_normal_no_flag(
         self,
@@ -258,19 +327,26 @@ class TestScoreRow:
             quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
             bucket_start=datetime(2024, 3, 20),
             total_shares=10,
-            unique_sharers=10,
-            sharer_density=0.1,
-            rolling_volume_mean=10.0,
-            rolling_density_mean=0.1,
+            unique_sharers=5,
+            sharer_density=0.5,
+            rolling_volume_median=10.0,
+            rolling_volume_mean=10.5,
+            rolling_volume_variance=12.0,
+            rolling_density_mean=0.5,
+            rolling_density_variance=0.02,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         result = score_row(row, base_config, 'daily', run_timestamp)
         assert result.volume_p_value >= base_config.volume_p_threshold
         assert result.density_p_value >= base_config.density_p_threshold
-        assert result.is_anomaly == 0
+        assert result.volume_q_value == 1.0  # provisional
+        assert result.density_q_value == 1.0  # provisional
+        assert result.is_anomaly == 0  # provisional (not set yet)
 
     def test_ac1_5_zero_baseline_no_anomaly(
         self,
@@ -283,17 +359,24 @@ class TestScoreRow:
             total_shares=100,
             unique_sharers=20,
             sharer_density=0.9,
+            rolling_volume_median=None,
             rolling_volume_mean=None,
+            rolling_volume_variance=None,
             rolling_density_mean=None,
+            rolling_density_variance=None,
             baseline_days_available=2,
             sample_dids=['did1', 'did2'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         result = score_row(row, base_config, 'daily', run_timestamp)
         assert result.volume_p_value == 1.0
         assert result.density_p_value == 1.0
-        assert result.is_anomaly == 0
+        assert result.volume_q_value == 1.0  # provisional
+        assert result.density_q_value == 1.0  # provisional
+        assert result.is_anomaly == 0  # provisional (not set yet)
 
     def test_extracts_quoted_author_did(
         self,
@@ -306,12 +389,17 @@ class TestScoreRow:
             total_shares=10,
             unique_sharers=10,
             sharer_density=0.1,
-            rolling_volume_mean=10.0,
+            rolling_volume_median=10.0,
+            rolling_volume_mean=10.5,
+            rolling_volume_variance=12.0,
             rolling_density_mean=0.1,
+            rolling_density_variance=0.01,
             baseline_days_available=7,
             sample_dids=['did1'],
             population_volume_median=None,
+            population_volume_dispersion=None,
             population_density_median=None,
+            population_density_variance=None,
         )
         result = score_row(row, base_config, 'daily', run_timestamp)
         assert result.quoted_author_did == 'did:plc:testdid123'
@@ -330,12 +418,17 @@ class TestScoreRows:
                 total_shares=10,
                 unique_sharers=10,
                 sharer_density=0.1,
-                rolling_volume_mean=10.0,
+                rolling_volume_median=10.0,
+                rolling_volume_mean=10.5,
+                rolling_volume_variance=12.0,
                 rolling_density_mean=0.1,
+                rolling_density_variance=0.01,
                 baseline_days_available=7,
                 sample_dids=['did1'],
                 population_volume_median=None,
+                population_volume_dispersion=None,
                 population_density_median=None,
+                population_density_variance=None,
             ),
             AggregatedRow(
                 quoted_uri='at://did:plc:abc2/app.bsky.feed.post/xyz2',
@@ -343,12 +436,17 @@ class TestScoreRows:
                 total_shares=20,
                 unique_sharers=15,
                 sharer_density=0.15,
-                rolling_volume_mean=20.0,
+                rolling_volume_median=20.0,
+                rolling_volume_mean=21.0,
+                rolling_volume_variance=25.0,
                 rolling_density_mean=0.15,
+                rolling_density_variance=0.015,
                 baseline_days_available=7,
                 sample_dids=['did2'],
                 population_volume_median=None,
+                population_volume_dispersion=None,
                 population_density_median=None,
+                population_density_variance=None,
             ),
         ]
         results = score_rows(rows, base_config, 'daily', run_timestamp)
@@ -356,6 +454,65 @@ class TestScoreRows:
         assert all(isinstance(r, ScoredResult) for r in results)
         assert results[0].quoted_author_did == 'did:plc:abc1'
         assert results[1].quoted_author_did == 'did:plc:abc2'
+        # Check that q-values are set (not provisional 1.0 anymore)
+        assert results[0].volume_q_value >= 0
+        assert results[0].density_q_value >= 0
+        assert results[1].volume_q_value >= 0
+        assert results[1].density_q_value >= 0
+        # Check that is_anomaly is determined (not provisional 0)
+        assert results[0].is_anomaly in (0, 1)
+        assert results[1].is_anomaly in (0, 1)
+
+    def test_bh_adjustment_per_signal_separate_families(
+        self,
+        base_config: AnalysisConfig,
+        run_timestamp: datetime,
+    ) -> None:
+        """AC2.3: volume and density p-values are adjusted as separate BH families."""
+        rows = [
+            AggregatedRow(
+                quoted_uri='at://did:plc:e1/app.bsky.feed.post/p1',
+                bucket_start=datetime(2024, 3, 20),
+                total_shares=100,
+                unique_sharers=50,
+                sharer_density=0.8,
+                rolling_volume_median=5.0,
+                rolling_volume_mean=5.5,
+                rolling_volume_variance=8.0,
+                rolling_density_mean=0.1,
+                rolling_density_variance=0.02,
+                baseline_days_available=7,
+                sample_dids=['did1'],
+                population_volume_median=None,
+                population_volume_dispersion=None,
+                population_density_median=None,
+                population_density_variance=None,
+            ),
+            AggregatedRow(
+                quoted_uri='at://did:plc:e2/app.bsky.feed.post/p2',
+                bucket_start=datetime(2024, 3, 20),
+                total_shares=10,
+                unique_sharers=10,
+                sharer_density=0.1,
+                rolling_volume_median=10.0,
+                rolling_volume_mean=10.5,
+                rolling_volume_variance=12.0,
+                rolling_density_mean=0.1,
+                rolling_density_variance=0.01,
+                baseline_days_available=7,
+                sample_dids=['did2'],
+                population_volume_median=None,
+                population_volume_dispersion=None,
+                population_density_median=None,
+                population_density_variance=None,
+            ),
+        ]
+        results = score_rows(rows, base_config, 'daily', run_timestamp)
+        # Both results should have q-values set (separate BH families)
+        assert results[0].volume_q_value >= results[0].volume_p_value
+        assert results[1].volume_q_value >= results[1].volume_p_value
+        assert results[0].density_q_value >= results[0].density_p_value
+        assert results[1].density_q_value >= results[1].density_p_value
 
     def test_processes_empty_list(
         self,

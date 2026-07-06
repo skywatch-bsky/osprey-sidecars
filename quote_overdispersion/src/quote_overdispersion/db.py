@@ -17,12 +17,17 @@ class AggregatedRow:
     total_shares: int
     unique_sharers: int
     sharer_density: float
+    rolling_volume_median: float | None
     rolling_volume_mean: float | None
+    rolling_volume_variance: float | None
     rolling_density_mean: float | None
+    rolling_density_variance: float | None
     baseline_days_available: int
     sample_dids: list[str]
     population_volume_median: float | None
+    population_volume_dispersion: float | None
     population_density_median: float | None
+    population_density_variance: float | None
 
 
 @dataclass(frozen=True)
@@ -38,11 +43,17 @@ class ScoredResult:
     expected_volume_lambda: float
     expected_density_lambda: float
     volume_p_value: float
+    volume_q_value: float
     density_p_value: float
+    density_q_value: float
     is_anomaly: int
     baseline_source: str
     baseline_days_available: int
     sample_dids: list[str]
+    rolling_volume_median: float | None
+    rolling_volume_variance: float | None
+    rolling_density_mean: float | None
+    rolling_density_variance: float | None
 
 
 def _ensure_datetime(value: date | datetime) -> datetime:
@@ -75,12 +86,17 @@ class QuoteOverdispersionDb:
                     total_shares=int(row[2]),
                     unique_sharers=int(row[3]),
                     sharer_density=float(row[4]),
-                    rolling_volume_mean=float(row[5]) if row[5] is not None else None,
-                    rolling_density_mean=float(row[6]) if row[6] is not None else None,
-                    baseline_days_available=int(row[7]),
-                    sample_dids=list(row[8]) if row[8] else [],
-                    population_volume_median=float(row[9]) if row[9] is not None else None,
-                    population_density_median=float(row[10]) if row[10] is not None else None,
+                    rolling_volume_median=float(row[5]) if row[5] is not None else None,
+                    rolling_volume_mean=float(row[6]) if row[6] is not None else None,
+                    rolling_volume_variance=float(row[7]) if row[7] is not None else None,
+                    rolling_density_mean=float(row[8]) if row[8] is not None else None,
+                    rolling_density_variance=float(row[9]) if row[9] is not None else None,
+                    baseline_days_available=int(row[10]),
+                    sample_dids=list(row[11]) if row[11] else [],
+                    population_volume_median=float(row[12]) if row[12] is not None else None,
+                    population_volume_dispersion=float(row[13]) if row[13] is not None else None,
+                    population_density_median=float(row[14]) if row[14] is not None else None,
+                    population_density_variance=float(row[15]) if row[15] is not None else None,
                 )
             )
         return rows
@@ -97,8 +113,14 @@ class QuoteOverdispersionDb:
             'sharer_density',
             'expected_volume_lambda',
             'expected_density_lambda',
+            'rolling_volume_median',
+            'rolling_volume_variance',
+            'rolling_density_mean',
+            'rolling_density_variance',
             'volume_p_value',
+            'volume_q_value',
             'density_p_value',
+            'density_q_value',
             'is_anomaly',
             'baseline_source',
             'baseline_days_available',
@@ -116,8 +138,14 @@ class QuoteOverdispersionDb:
                 r.sharer_density,
                 r.expected_volume_lambda,
                 r.expected_density_lambda,
+                r.rolling_volume_median,
+                r.rolling_volume_variance,
+                r.rolling_density_mean,
+                r.rolling_density_variance,
                 r.volume_p_value,
+                r.volume_q_value,
                 r.density_p_value,
+                r.density_q_value,
                 r.is_anomaly,
                 r.baseline_source,
                 r.baseline_days_available,
