@@ -110,10 +110,10 @@ ORDER BY run_date DESC, granularity;
 
 ### Tuning Levers
 
-- **FDR target (env var `SIGNUP_ANOMALY_DAILY_P_THRESHOLD`, `SIGNUP_ANOMALY_HOURLY_P_THRESHOLD`):** Controls q-value cutoff. Lower → stricter, fewer flags. Typical range: 0.01–0.1.
-- **Baseline days (`BASELINE_DAYS`):** Default 7; controls rolling window for median/variance. Shorter windows → thinner hour-of-day bins (at default 7, hourly matching uses ~7 same-hour observations from the past 7 days). Increase to 14 for more stable baselines; decrease to 3 for faster response to emerging behaviour.
-- **Min sharers (`MIN_SHARERS`):** Not applicable to signup (per-host counts, no sharer dimension).
-- **Cold-start threshold (`COLD_START_MIN_DAYS`):** Default 3; when entity has <3 days of history, population median is used instead. Increase to 7 for more conservative fallback; decrease to 1 for faster entity bootstrap.
+- **FDR target (env var `SIGNUP_ANOMALY_DAILY_P_THRESHOLD`, `SIGNUP_ANOMALY_HOURLY_P_THRESHOLD`):** Controls q-value cutoff. Defaults 0.01 (daily) and 0.05 (hourly). Lower → stricter, fewer flags. Typical range: 0.01–0.1.
+- **Baseline days (`SIGNUP_ANOMALY_BASELINE_DAYS`):** Default 7; controls rolling window for median/variance. Shorter windows → thinner hour-of-day bins (at default 7, hourly matching uses ~7 same-hour observations from the past 7 days). Increase to 14 for more stable baselines; decrease to 3 for faster response to emerging behaviour.
+- **Min sharers:** Not applicable to signup (per-host counts, no sharer dimension).
+- **Cold-start threshold (`SIGNUP_ANOMALY_COLD_START_MIN_DAYS`):** Default 3; when entity has <3 days of history, population median is used instead. Increase to 7 for more conservative fallback; decrease to 1 for faster entity bootstrap.
 
 ### Escalation
 
@@ -240,10 +240,10 @@ ORDER BY run_date DESC, granularity;
 
 ### Tuning Levers
 
-- **FDR targets (`URL_OVERDISPERSION_DAILY_VOLUME_P_THRESHOLD`, `URL_OVERDISPERSION_DAILY_DENSITY_P_THRESHOLD`, and hourly variants):** Default 0.05. Independent control over volume and density strictness.
-- **Baseline days (`BASELINE_DAYS`):** Default 14 for URL (longer than signup due to sparser domain-specific events). Increase to 21 for volatile domains; decrease to 7 for faster response.
-- **Min sharers (`MIN_SHARERS`):** Default 3; filters scored rows (final WHERE clause only, not baseline construction). Increase to 5 to focus on more-shared domains; decrease to 2 to broaden coverage.
-- **Cold-start threshold (`COLD_START_MIN_DAYS`):** Default 3.
+- **FDR targets (`URL_OVERDISPERSION_VOLUME_P_THRESHOLD`, `URL_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.01. Independent control over volume and density strictness.
+- **Baseline days (`URL_OVERDISPERSION_BASELINE_DAYS`):** Default 14 for URL (longer than signup due to sparser domain-specific events). Increase to 21 for volatile domains; decrease to 7 for faster response.
+- **Min sharers (`URL_OVERDISPERSION_MIN_SHARERS`):** Default 3; filters scored rows (final WHERE clause only, not baseline construction). Increase to 5 to focus on more-shared domains; decrease to 2 to broaden coverage.
+- **Cold-start threshold (`URL_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 3.
 
 ### Escalation
 
@@ -347,10 +347,10 @@ ORDER BY run_date DESC, granularity;
 
 ### Tuning Levers
 
-- **FDR targets (`QUOTE_OVERDISPERSION_DAILY_VOLUME_P_THRESHOLD`, `QUOTE_OVERDISPERSION_DAILY_DENSITY_P_THRESHOLD`, and hourly variants):** Default 0.05.
-- **Baseline days (`BASELINE_DAYS`):** Default 14, same as URL. May be reduced to 7 for faster response to new quoted posts.
-- **Min sharers:** Default 3 (same rationale as URL).
-- **Cold-start threshold:** Default 3.
+- **FDR targets (`QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD`, `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.01.
+- **Baseline days (`QUOTE_OVERDISPERSION_BASELINE_DAYS`):** Default 14, same as URL. May be reduced to 7 for faster response to new quoted posts.
+- **Min sharers (`QUOTE_OVERDISPERSION_MIN_SHARERS`):** Default 3 (same rationale as URL).
+- **Cold-start threshold (`QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 3.
 
 ### Escalation
 
@@ -427,14 +427,14 @@ WHERE toDate(run_timestamp) = today();
 - **Hourly entropy threshold (`ACCOUNT_ENTROPY_HOURLY_NORM_THRESHOLD`):** Default 0.85 (normalized). Raised to 0.90 to accept more variance; lowered to 0.75 to flag more posting-pattern disorder.
 - **Interval entropy threshold (`ACCOUNT_ENTROPY_INTERVAL_NORM_THRESHOLD`):** Default 0.53 (normalized). Lower values (e.g., 0.40) flag more metronomic posting timing.
 - **Coefficient-of-variation threshold (`ACCOUNT_ENTROPY_CV_THRESHOLD`):** Default 0.5. Raised to 0.7 for more regular human patterns; lowered to 0.3 for stricter regularity filtering.
-- **Min posts (`MIN_POSTS`):** Default 30; accounts with <30 posts are not scored. Increase to 50 for more stable estimates; decrease to 10 for broader coverage at lower confidence.
+- **Min posts (`ACCOUNT_ENTROPY_MIN_POSTS`):** Default 10; accounts with <10 posts are not scored. Increase to 50 for more stable estimates; decrease to 5 for broader coverage at lower confidence.
 
 ### Escalation
 
 If bot-like rate is unexpectedly high (>5%):
 1. Decompose by signal (Query 3) to identify the dominant driver.
 2. Check that entropies are normalized correctly: raw `hourly_entropy` should be in bits (0–log₂24 ≈ 4.58), normalized should be [0, 1].
-3. Verify Miller–Madow correction is applied: `hourly_entropy_norm` should incorporate `(K_occupied − 1) / (2 * post_count * ln 2)` bias term.
+3. Verify Miller–Madow correction is applied: `hourly_entropy_norm` should incorporate `(K_occupied − 1) / (2 * N * ln 2)` bias term (where N is post count).
 
 ---
 
@@ -475,8 +475,8 @@ ORDER BY run_date DESC;
 SELECT
     run_date,
     ROUND(AVG(total_weight), 1) as avg_total_weight,
-    ROUND(PERCENTILE(total_weight, 0.5), 1) as p50_total_weight,
-    ROUND(PERCENTILE(total_weight, 0.95), 1) as p95_total_weight,
+    ROUND(quantile(0.5)(total_weight), 1) as p50_total_weight,
+    ROUND(quantile(0.95)(total_weight), 1) as p95_total_weight,
     MAX(total_weight) as max_total_weight
 FROM url_cosharing_clusters
 WHERE run_date >= today() - 7
@@ -536,11 +536,11 @@ Run today's clustering and record cluster count and size distribution (Query 1).
 
 **Step 2: Sweep**
 On the same pairs (fix run_date), re-run the Leiden algorithm with resolution parameters:
-- 0.005 (very loose)
-- 0.01 (loose)
-- 0.02 (medium)
-- 0.05 (tight)
-- 0.1 (very tight)
+- 0.01 (very loose)
+- 0.02 (loose)
+- 0.05 (medium)
+- 0.1 (tight)
+- 0.2 (very tight)
 
 Re-compute cluster count and distribution for each.
 
@@ -550,11 +550,11 @@ Pick the resolution that yields cluster metrics closest to the baseline (e.g., �
 **Step 4: Monitor**
 After applying the change, re-run Query 1 for 3 days. Verify that evolution-type mix remains stable (continuation-dominant).
 
-**Note:** If the default 0.005 already produces very few clusters, increase to 0.01 or 0.02. If it produces thousands of singleton clusters, decrease to 0.001.
+**Note:** If the default 0.05 already produces very few clusters, increase to 0.1 or 0.2. If it produces thousands of singleton clusters, decrease to 0.01 or 0.005.
 
 ### Tuning Levers
 
-- **Resolution (`URL_COSHARING_RESOLUTION`):** Default 0.005. See re-tuning procedure above.
+- **Resolution (`URL_COSHARING_RESOLUTION`):** Default 0.05. See re-tuning procedure above.
 - **Min edge weight (`URL_COSHARING_MIN_EDGE_WEIGHT`):** Default 2 (pairs must co-share ≥2 URLs). Increase to 3 for stricter linking; decrease to 1 for broader coverage.
 - **Jaccard threshold (`URL_COSHARING_JACCARD_THRESHOLD`):** Default 0.5 (strict). Lower to ~0.3 to link more clusters across days (looser evolution matching, more continuations, fewer birth/death events). See "Jaccard threshold guidance" below.
 
@@ -604,8 +604,8 @@ ORDER BY run_date DESC;
 SELECT
     run_date,
     ROUND(AVG(total_weight), 1) as avg_total_weight,
-    ROUND(PERCENTILE(total_weight, 0.5), 1) as p50_total_weight,
-    ROUND(PERCENTILE(total_weight, 0.95), 1) as p95_total_weight,
+    ROUND(quantile(0.5)(total_weight), 1) as p50_total_weight,
+    ROUND(quantile(0.95)(total_weight), 1) as p95_total_weight,
     MAX(total_weight) as max_total_weight
 FROM quote_cosharing_clusters
 WHERE run_date >= today() - 7
@@ -642,7 +642,7 @@ Same as URL cosharing (see above). Run the procedure independently for `QUOTE_CO
 
 ### Tuning Levers
 
-- **Resolution (`QUOTE_COSHARING_RESOLUTION`):** Default 0.005.
+- **Resolution (`QUOTE_COSHARING_RESOLUTION`):** Default 0.05.
 - **Min edge weight (`QUOTE_COSHARING_MIN_EDGE_WEIGHT`):** Default 2.
 - **Jaccard threshold (`QUOTE_COSHARING_JACCARD_THRESHOLD`):** Default 0.5; see guidance above.
 
