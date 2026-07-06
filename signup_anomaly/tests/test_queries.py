@@ -127,6 +127,11 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert 'p.population_dispersion_index' in query
 
+    def test_filters_zero_current_count_rows(self, base_config: AnalysisConfig) -> None:
+        """Zero-signup hosts are excluded from the BH-FDR family to avoid inflating n."""
+        query = daily_aggregation_query(base_config)
+        assert 'AND b.signup_count > 0' in query
+
 
 class TestHourlyAggregationQuery:
     def test_includes_distinct_accounts(self, base_config: AnalysisConfig) -> None:
@@ -237,3 +242,8 @@ class TestHourlyAggregationQuery:
     def test_select_includes_population_dispersion_index_column(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert 'p.population_dispersion_index' in query
+
+    def test_filters_zero_current_count_rows(self, base_config: AnalysisConfig) -> None:
+        """Zero-signup hosts are excluded from the BH-FDR family to avoid inflating n."""
+        query = hourly_aggregation_query(base_config)
+        assert 'AND b.signup_count > 0' in query

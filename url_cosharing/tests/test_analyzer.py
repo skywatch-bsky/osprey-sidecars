@@ -259,6 +259,34 @@ class TestBuildGraph:
         assert edge['newman_weight'] is not None
         assert edge['shared_urls'] is not None
 
+    def test_build_graph_aggregates_fragments_before_filtering(self, base_date: date) -> None:
+        """Regression: below-threshold fragments that aggregate above threshold are NOT dropped.
+
+        Two reversed rows each with weight=1 and min_edge_weight=2 must produce
+        a single aggregated edge with weight=2.  The old code filtered per-row
+        *before* aggregation, discarding both fragments.
+        """
+        pairs = [
+            PairRow(
+                date=base_date, account_a='did:a', account_b='did:b', weight=1, newman_weight=0.3, shared_urls=['u1']
+            ),
+            PairRow(
+                date=base_date,
+                account_a='did:b',
+                account_b='did:a',
+                weight=1,
+                newman_weight=0.3,
+                shared_urls=['u2'],
+            ),
+        ]
+        graph = build_graph(pairs, min_edge_weight=2)
+
+        assert graph.ecount() == 1
+        edge = graph.es[0]
+        assert edge['weight'] == 2
+        assert edge['newman_weight'] == pytest.approx(0.6)
+        assert set(edge['shared_urls']) == {'u1', 'u2'}
+
     def test_build_graph_raw_weight_filter_does_not_rescue_thin_edges(self, base_date: date) -> None:
         """Test AC6.3: raw weight filter excludes thin edges; Newman weight does not rescue them."""
         pairs = [

@@ -42,9 +42,10 @@ class TestFetchPairsQuery:
         query = fetch_pairs_query(base_config)
         assert 'yesterday()' in query
 
-    def test_uses_min_edge_weight_from_config(self, base_config: AnalysisConfig) -> None:
+    def test_does_not_prefilter_by_min_edge_weight(self, base_config: AnalysisConfig) -> None:
+        """min_edge_weight is applied in build_graph after aggregation, not in SQL."""
         query = fetch_pairs_query(base_config)
-        assert f'weight >= {base_config.min_edge_weight}' in query
+        assert f'weight >= {base_config.min_edge_weight}' not in query
 
     def test_selects_all_required_columns(self, base_config: AnalysisConfig) -> None:
         query = fetch_pairs_query(base_config)
@@ -87,11 +88,12 @@ class TestFetchPairsQuery:
             source_table='osprey_execution_results',
         )
         query = fetch_pairs_query(config)
-        assert 'weight >= 5' in query
+        assert 'weight >= 5' not in query
 
-    def test_filters_on_raw_weight_not_newman_weight(self, base_config: AnalysisConfig) -> None:
+    def test_no_weight_prefilter_in_sql(self, base_config: AnalysisConfig) -> None:
+        """SQL fetch returns all rows; weight filtering happens in build_graph after aggregation."""
         query = fetch_pairs_query(base_config)
-        assert 'AND weight >=' in query
+        assert 'AND weight >=' not in query
         assert 'AND newman_weight >=' not in query
 
 

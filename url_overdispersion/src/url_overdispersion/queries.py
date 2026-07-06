@@ -13,7 +13,7 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
                 count() AS total_shares,
                 uniq(UserId) AS unique_sharers,
                 arraySlice(groupArray(DISTINCT UserId), 1, 5) AS sample_dids,
-                arraySlice(groupArray(DISTINCT arrayJoin(assumeNotNull(FacetLinkList))), 1, 5) AS sample_urls
+                arraySlice(arrayDistinct(arrayFlatten(groupArray(assumeNotNull(FacetLinkList)))), 1, 5) AS sample_urls
             FROM {config.source_table}
             WHERE Collection = 'app.bsky.feed.post'
                 AND OperationKind = 'create'
@@ -108,7 +108,7 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
                 count() AS total_shares,
                 uniq(UserId) AS unique_sharers,
                 arraySlice(groupArray(DISTINCT UserId), 1, 5) AS sample_dids,
-                arraySlice(groupArray(DISTINCT arrayJoin(assumeNotNull(FacetLinkList))), 1, 5) AS sample_urls
+                arraySlice(arrayDistinct(arrayFlatten(groupArray(assumeNotNull(FacetLinkList)))), 1, 5) AS sample_urls
             FROM {config.source_table}
             WHERE Collection = 'app.bsky.feed.post'
                 AND OperationKind = 'create'

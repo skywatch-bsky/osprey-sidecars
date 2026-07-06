@@ -71,7 +71,7 @@ class TestDailyAggregationQuery:
 
     def test_includes_sample_urls(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'arraySlice(groupArray(DISTINCT arrayJoin(assumeNotNull(FacetLinkList))), 1, 5)' in query
+        assert 'arraySlice(arrayDistinct(arrayFlatten(groupArray(assumeNotNull(FacetLinkList)))), 1, 5)' in query
 
     def test_includes_densification_cross_join(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
@@ -205,7 +205,7 @@ class TestHourlyAggregationQuery:
 
     def test_includes_sample_urls(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'arraySlice(groupArray(DISTINCT arrayJoin(assumeNotNull(FacetLinkList))), 1, 5)' in query
+        assert 'arraySlice(arrayDistinct(arrayFlatten(groupArray(assumeNotNull(FacetLinkList)))), 1, 5)' in query
 
     def test_includes_densification_cross_join(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)

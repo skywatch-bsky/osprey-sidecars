@@ -97,6 +97,7 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
         FROM baseline b
         CROSS JOIN population_stats p
         WHERE b.day = toDate(now())
+            AND b.signup_count > 0
     """
 
 
@@ -193,6 +194,7 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
         FROM baseline b
         CROSS JOIN population_stats p
         WHERE b.bucket = toStartOfHour(now())
+            AND b.signup_count > 0
     """
 
 

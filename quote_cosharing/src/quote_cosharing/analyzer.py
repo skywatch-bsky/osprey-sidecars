@@ -81,13 +81,8 @@ def build_graph(pairs: list[PairRow], min_edge_weight: int) -> ig.Graph:
 
     Returns an empty graph (0 vertices, 0 edges) if no qualifying pairs.
     """
-    filtered_pairs = [p for p in pairs if p.weight >= min_edge_weight]
-
-    if not filtered_pairs:
-        return ig.Graph()
-
     aggregated: dict[tuple[str, str], tuple[int, float, set[str]]] = {}
-    for pair in filtered_pairs:
+    for pair in pairs:
         key = (pair.account_a, pair.account_b) if pair.account_a < pair.account_b else (pair.account_b, pair.account_a)
         if key in aggregated:
             weight, newman_weight, uris = aggregated[key]
@@ -98,6 +93,13 @@ def build_graph(pairs: list[PairRow], min_edge_weight: int) -> ig.Graph:
             )
         else:
             aggregated[key] = (pair.weight, pair.newman_weight, set(pair.shared_uris))
+
+    # Filter by min_edge_weight on the *aggregated* raw weight so that
+    # fragmented duplicate pairs (each below threshold) are combined first.
+    aggregated = {key: val for key, val in aggregated.items() if val[0] >= min_edge_weight}
+
+    if not aggregated:
+        return ig.Graph()
 
     sorted_dids = sorted({did for key in aggregated for did in key})
     did_to_idx = {did: idx for idx, did in enumerate(sorted_dids)}

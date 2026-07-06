@@ -15,7 +15,6 @@ def fetch_pairs_query(config: AnalysisConfig) -> str:
             shared_urls
         FROM {config.pairs_table}
         WHERE date = yesterday()
-            AND weight >= {config.min_edge_weight}
     """
 
 

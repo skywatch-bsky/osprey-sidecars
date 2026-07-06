@@ -254,6 +254,39 @@ class TestBuildGraph:
         assert graph.es[0]['newman_weight'] == 2.5
         assert set(graph.es[0]['shared_uris']) == {'at://uri1', 'at://uri2'}
 
+    def test_build_graph_aggregates_fragments_before_filtering(self, base_date: date) -> None:
+        """Regression: below-threshold fragments that aggregate above threshold are NOT dropped.
+
+        Two reversed rows each with weight=1 and min_edge_weight=2 must produce
+        a single aggregated edge with weight=2.  The old code filtered per-row
+        *before* aggregation, discarding both fragments.
+        """
+        pairs = [
+            PairRow(
+                date=base_date,
+                account_a='did:a',
+                account_b='did:b',
+                weight=1,
+                newman_weight=0.3,
+                shared_uris=['at://uri1'],
+            ),
+            PairRow(
+                date=base_date,
+                account_a='did:b',
+                account_b='did:a',
+                weight=1,
+                newman_weight=0.3,
+                shared_uris=['at://uri2'],
+            ),
+        ]
+        graph = build_graph(pairs, min_edge_weight=2)
+
+        assert graph.vcount() == 2
+        assert graph.ecount() == 1
+        assert graph.es[0]['weight'] == 2
+        assert graph.es[0]['newman_weight'] == 0.6
+        assert set(graph.es[0]['shared_uris']) == {'at://uri1', 'at://uri2'}
+
     def test_build_graph_no_parallel_edges(self, base_date: date) -> None:
         """Test that aggregation prevents parallel edges."""
         pairs = [
