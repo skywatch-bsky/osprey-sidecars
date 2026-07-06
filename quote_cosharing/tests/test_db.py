@@ -16,6 +16,7 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=5,
+            newman_weight=2.5,
             shared_uris=[
                 'at://did:plc:user1/app.bsky.feed.post/abc123',
                 'at://did:plc:user1/app.bsky.feed.post/def456',
@@ -25,6 +26,7 @@ class TestPairRow:
         assert row.account_a == 'did:plc:user1'
         assert row.account_b == 'did:plc:user2'
         assert row.weight == 5
+        assert row.newman_weight == 2.5
         assert row.shared_uris == [
             'at://did:plc:user1/app.bsky.feed.post/abc123',
             'at://did:plc:user1/app.bsky.feed.post/def456',
@@ -36,6 +38,7 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=1,
+            newman_weight=0.5,
             shared_uris=[],
         )
         assert row.shared_uris == []
@@ -46,6 +49,7 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=5,
+            newman_weight=2.5,
             shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
         )
         with pytest.raises(AttributeError):
@@ -115,9 +119,10 @@ class TestQuoteCosharingDb:
                 'did:plc:user1',
                 'did:plc:user2',
                 5,
+                2.5,
                 ['at://did:plc:user1/app.bsky.feed.post/abc123', 'at://did:plc:user1/app.bsky.feed.post/def456'],
             ),
-            (date(2026, 3, 22), 'did:plc:user3', 'did:plc:user4', 2, []),
+            (date(2026, 3, 22), 'did:plc:user3', 'did:plc:user4', 2, 1.0, []),
         ]
         mock_client.query.return_value = mock_result
 
@@ -128,6 +133,7 @@ class TestQuoteCosharingDb:
         assert rows[0].account_a == 'did:plc:user1'
         assert rows[0].account_b == 'did:plc:user2'
         assert rows[0].weight == 5
+        assert rows[0].newman_weight == 2.5
         assert rows[0].shared_uris == [
             'at://did:plc:user1/app.bsky.feed.post/abc123',
             'at://did:plc:user1/app.bsky.feed.post/def456',
@@ -135,6 +141,7 @@ class TestQuoteCosharingDb:
 
         assert rows[1].account_a == 'did:plc:user3'
         assert rows[1].weight == 2
+        assert rows[1].newman_weight == 1.0
         assert rows[1].shared_uris == []
 
     @patch('quote_cosharing.db.clickhouse_connect.get_client')

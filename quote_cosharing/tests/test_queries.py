@@ -45,6 +45,7 @@ class TestFetchPairsQuery:
     def test_uses_min_edge_weight_from_config(self, base_config: AnalysisConfig) -> None:
         query = fetch_pairs_query(base_config)
         assert f'weight >= {base_config.min_edge_weight}' in query
+        assert 'newman_weight >=' not in query
 
     def test_selects_all_required_columns(self, base_config: AnalysisConfig) -> None:
         query = fetch_pairs_query(base_config)
@@ -52,6 +53,7 @@ class TestFetchPairsQuery:
         assert 'account_a' in query
         assert 'account_b' in query
         assert 'weight' in query
+        assert 'newman_weight' in query
         assert 'shared_uris' in query
 
     def test_with_custom_table_name(self) -> None:
