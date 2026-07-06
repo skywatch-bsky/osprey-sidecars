@@ -7,9 +7,11 @@ from datetime import datetime
 import pytest
 
 from account_entropy.analyzer import (
+    coefficient_of_variation,
     compute_entropy,
     compute_hourly_entropy,
     compute_interval_entropy,
+    normalized_entropy,
     score_account,
     score_accounts,
 )
@@ -46,6 +48,68 @@ def window_end() -> datetime:
     return datetime(2024, 3, 20, 0, 0, 0)
 
 
+class TestNormalizedEntropy:
+    def test_ac5_1_uniform_many_posts(self) -> None:
+        # AC5.1: N >= bins, uniform distribution -> entropy saturates and clamps to 1.0
+        # 240 posts uniformly across 24 bins (10 per bin)
+        # H = log2(24) ≈ 4.585, correction pushes above, clamps to 1.0
+        result = normalized_entropy([10] * 24, 24)
+        assert result == 1.0
+
+    def test_ac5_1_uniform_few_posts(self) -> None:
+        # AC5.1: 10 posts in 10 distinct bins, achievable max = log2(10)
+        # Uniform: H = log2(10), correction pushes above achievable, clamps to 1.0
+        result = normalized_entropy([1] * 10 + [0] * 14, 24)
+        assert result == 1.0
+
+    def test_ac5_1_single_bin(self) -> None:
+        # AC5.1: All counts in one bin -> entropy = 0.0, correction term = 0
+        result = normalized_entropy([10, 0, 0], 24)
+        assert result == 0.0
+
+    def test_ac5_1_bounds_arbitrary_cases(self) -> None:
+        # AC5.1: Result always in [0.0, 1.0] for various distributions
+        test_cases = [
+            [3, 1, 0, 7],
+            [1, 1],
+            [100, 1],
+        ]
+        for counts in test_cases:
+            result = normalized_entropy(counts, 24)
+            assert 0.0 <= result <= 1.0, f'Result {result} out of bounds for {counts}'
+
+    def test_ac5_2_miller_madow_verification(self) -> None:
+        # AC5.2: Numeric verification of Miller-Madow correction
+        # normalized_entropy([5, 5], 24)
+        # N = 10, K_occupied = 2, H = 1.0 bit
+        # correction = (2-1)/(2*10*ln(2)) ≈ 0.072135 bits
+        # achievable = log2(min(10, 24)) = log2(10) ≈ 3.321928
+        # expected ≈ (1.0 + 0.072135) / 3.321928 ≈ 0.322745
+        counts = [5, 5]
+        result = normalized_entropy(counts, 24)
+        H = compute_entropy(counts)
+        K_occupied = 2
+        correction = (K_occupied - 1) / (2 * 10 * math.log(2))
+        achievable = math.log2(10)
+        expected = (H + correction) / achievable
+        assert result == pytest.approx(expected, rel=1e-9)
+
+    def test_edge_empty_counts(self) -> None:
+        # Edge: empty counts list -> N = 0 < 2 -> 0.0
+        result = normalized_entropy([], 24)
+        assert result == 0.0
+
+    def test_edge_single_count(self) -> None:
+        # Edge: N = 1 < 2 -> 0.0
+        result = normalized_entropy([1], 24)
+        assert result == 0.0
+
+    def test_edge_max_bins_less_than_2(self) -> None:
+        # Edge: max_bins = 1 < 2 -> 0.0
+        result = normalized_entropy([2, 3], 1)
+        assert result == 0.0
+
+
 class TestComputeEntropy:
     def test_uniform_distribution(self) -> None:
         # Equal counts across 8 bins -> entropy = log2(8) = 3.0
@@ -77,6 +141,28 @@ class TestComputeEntropy:
         result = compute_entropy(counts)
         # H = -(0.9*log2(0.9) + 0.1*log2(0.1)) ≈ 0.469
         assert 0.4 < result < 0.5
+
+
+class TestCoefficientOfVariation:
+    def test_regular_cadence(self) -> None:
+        # Regular cadence: stddev = 5, mean = 100 -> CV = 0.05
+        result = coefficient_of_variation(100.0, 5.0)
+        assert result == pytest.approx(0.05)
+
+    def test_irregular_cadence(self) -> None:
+        # Irregular cadence: stddev = 150, mean = 100 -> CV = 1.5
+        result = coefficient_of_variation(100.0, 150.0)
+        assert result == pytest.approx(1.5)
+
+    def test_edge_zero_mean(self) -> None:
+        # Edge: mean = 0 -> 0.0 (degenerate case)
+        result = coefficient_of_variation(0.0, 0.0)
+        assert result == 0.0
+
+    def test_edge_negative_mean(self) -> None:
+        # Edge: mean < 0 -> 0.0 (invalid by convention)
+        result = coefficient_of_variation(-1.0, 5.0)
+        assert result == 0.0
 
 
 class TestComputeHourlyEntropy:
@@ -203,26 +289,26 @@ class TestScoreAccount:
         # to produce high entropy across interval bins
         timestamps_ms = [
             0,
-            30 * 1000,        # 30s gap -> bin [0, 60)
-            5030 * 1000,      # 5000s gap -> bin [3600, 14400)
-            55030 * 1000,     # 50000s gap -> bin [14400, inf)
-            57030 * 1000,     # 2000s gap -> bin [900, 3600)
-            59030 * 1000,     # 2000s gap -> bin [900, 3600)
-            61030 * 1000,     # 2000s gap -> bin [900, 3600)
-            63030 * 1000,     # 2000s gap -> bin [900, 3600)
-            65030 * 1000,     # 2000s gap -> bin [900, 3600)
-            120000 * 1000,    # 55000s gap -> bin [14400, inf)
-            175000 * 1000,    # 55000s gap -> bin [14400, inf)
-            200000 * 1000,    # 25000s gap -> bin [14400, inf)
-            220000 * 1000,    # 20000s gap -> bin [14400, inf)
-            240000 * 1000,    # 20000s gap -> bin [14400, inf)
-            250000 * 1000,    # 10000s gap -> bin [3600, 14400)
-            260000 * 1000,    # 10000s gap -> bin [3600, 14400)
-            265000 * 1000,    # 5000s gap -> bin [3600, 14400)
-            267000 * 1000,    # 2000s gap -> bin [900, 3600)
-            269000 * 1000,    # 2000s gap -> bin [900, 3600)
-            270000 * 1000,    # 1000s gap -> bin [900, 3600)
-            271000 * 1000,    # 1000s gap -> bin [900, 3600)
+            30 * 1000,  # 30s gap -> bin [0, 60)
+            5030 * 1000,  # 5000s gap -> bin [3600, 14400)
+            55030 * 1000,  # 50000s gap -> bin [14400, inf)
+            57030 * 1000,  # 2000s gap -> bin [900, 3600)
+            59030 * 1000,  # 2000s gap -> bin [900, 3600)
+            61030 * 1000,  # 2000s gap -> bin [900, 3600)
+            63030 * 1000,  # 2000s gap -> bin [900, 3600)
+            65030 * 1000,  # 2000s gap -> bin [900, 3600)
+            120000 * 1000,  # 55000s gap -> bin [14400, inf)
+            175000 * 1000,  # 55000s gap -> bin [14400, inf)
+            200000 * 1000,  # 25000s gap -> bin [14400, inf)
+            220000 * 1000,  # 20000s gap -> bin [14400, inf)
+            240000 * 1000,  # 20000s gap -> bin [14400, inf)
+            250000 * 1000,  # 10000s gap -> bin [3600, 14400)
+            260000 * 1000,  # 10000s gap -> bin [3600, 14400)
+            265000 * 1000,  # 5000s gap -> bin [3600, 14400)
+            267000 * 1000,  # 2000s gap -> bin [900, 3600)
+            269000 * 1000,  # 2000s gap -> bin [900, 3600)
+            270000 * 1000,  # 1000s gap -> bin [900, 3600)
+            271000 * 1000,  # 1000s gap -> bin [900, 3600)
         ]
 
         row = AccountActivityRow(
@@ -234,8 +320,8 @@ class TestScoreAccount:
         )
         result = score_account(row, base_config, run_timestamp, window_start, window_end)
         # Check entropy values
-        assert result.hourly_entropy >= 3.9, f"Expected hourly_entropy >= 3.9, got {result.hourly_entropy}"
-        assert result.interval_entropy > 1.5, f"Expected interval_entropy > 1.5, got {result.interval_entropy}"
+        assert result.hourly_entropy >= 3.9, f'Expected hourly_entropy >= 3.9, got {result.hourly_entropy}'
+        assert result.interval_entropy > 1.5, f'Expected interval_entropy > 1.5, got {result.interval_entropy}'
         assert result.hourly_flag == 1
         assert result.interval_flag == 0  # High interval entropy -> no flag
         assert result.is_bot_like == 0
@@ -278,15 +364,15 @@ class TestScoreAccount:
         # Highly varied intervals to span multiple bins and produce high entropy
         timestamps_ms = [
             0,
-            50 * 1000,        # 50s
-            250 * 1000,       # 200s
-            1150 * 1000,      # 900s
-            5150 * 1000,      # 4000s
-            10150 * 1000,     # 5000s
-            50150 * 1000,     # 40000s
-            60150 * 1000,     # 10000s
-            70150 * 1000,     # 10000s
-            80150 * 1000,     # 10000s
+            50 * 1000,  # 50s
+            250 * 1000,  # 200s
+            1150 * 1000,  # 900s
+            5150 * 1000,  # 4000s
+            10150 * 1000,  # 5000s
+            50150 * 1000,  # 40000s
+            60150 * 1000,  # 10000s
+            70150 * 1000,  # 10000s
+            80150 * 1000,  # 10000s
         ]
 
         row = AccountActivityRow(
@@ -402,9 +488,7 @@ class TestScoreAccounts:
             ordered_timestamps=[i * 500 * 1000 for i in range(10)],  # Irregular intervals
             sample_rkeys=['human-rkey'],
         )
-        results = score_accounts(
-            [bot_row, human_row], base_config, run_timestamp, window_start, window_end
-        )
+        results = score_accounts([bot_row, human_row], base_config, run_timestamp, window_start, window_end)
         assert len(results) == 2
         # Bot should be flagged
         assert results[0].is_bot_like == 1

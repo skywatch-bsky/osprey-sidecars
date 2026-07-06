@@ -31,6 +31,37 @@ def compute_entropy(counts: list[int]) -> float:
     return entropy
 
 
+def normalized_entropy(counts: list[int], max_bins: int) -> float:
+    """Bias-corrected Shannon entropy rescaled to [0, 1].
+
+    Applies the Miller-Madow correction, H_mm = H + (K_occupied - 1) / (2 * N * ln 2)
+    bits, where K_occupied is the number of non-zero bins and N the total count,
+    then divides by the achievable maximum log2(min(N, max_bins)).
+
+    Returns 0.0 when N < 2 or max_bins < 2 (no meaningful spread is measurable).
+    Result is clamped to [0.0, 1.0] because the bias correction can push the
+    corrected estimate above the achievable maximum for small N.
+    """
+    total = sum(counts)
+    if total < 2 or max_bins < 2:
+        return 0.0
+    occupied = sum(1 for c in counts if c > 0)
+    corrected = compute_entropy(counts) + (occupied - 1) / (2 * total * math.log(2))
+    achievable = math.log2(min(total, max_bins))
+    return min(1.0, max(0.0, corrected / achievable))
+
+
+def coefficient_of_variation(mean: float, stddev: float) -> float:
+    """Scale-free variability of inter-post intervals: stddev / mean.
+
+    Returns 0.0 when mean <= 0 (fewer than two posts, or degenerate
+    zero-length intervals) — maximally regular by convention.
+    """
+    if mean <= 0:
+        return 0.0
+    return stddev / mean
+
+
 def compute_hourly_entropy(hourly_bins: list[int]) -> float:
     """
     Compute Shannon entropy of posting distribution across 24 hours.
@@ -82,7 +113,7 @@ def compute_interval_entropy(
 
     mean_interval = sum(intervals_seconds) / len(intervals_seconds)
     variance = sum((x - mean_interval) ** 2 for x in intervals_seconds) / len(intervals_seconds)
-    stddev_interval = variance ** 0.5
+    stddev_interval = variance**0.5
 
     num_bins = len(bin_edges) + 1
     histogram = [0] * num_bins
@@ -177,6 +208,4 @@ def score_accounts(
     Returns:
         List of scored results, one per input row.
     """
-    return [
-        score_account(row, config, run_timestamp, window_start, window_end) for row in rows
-    ]
+    return [score_account(row, config, run_timestamp, window_start, window_end) for row in rows]
