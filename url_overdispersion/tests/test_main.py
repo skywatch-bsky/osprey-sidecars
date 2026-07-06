@@ -10,6 +10,40 @@ from url_overdispersion.db import AggregatedRow, ScoredResult
 from url_overdispersion.main import run_cycle
 
 
+def create_test_row(
+    domain: str,
+    bucket_start: datetime,
+    total_shares: int,
+    unique_sharers: int,
+    sharer_density: float,
+    rolling_volume_mean: float,
+    rolling_density_mean: float,
+    baseline_days_available: int,
+    sample_dids: list[str],
+    sample_urls: list[str],
+) -> AggregatedRow:
+    """Helper to create AggregatedRow with new fields defaulting to None."""
+    return AggregatedRow(
+        domain=domain,
+        bucket_start=bucket_start,
+        total_shares=total_shares,
+        unique_sharers=unique_sharers,
+        sharer_density=sharer_density,
+        rolling_volume_median=rolling_volume_mean,
+        rolling_volume_mean=rolling_volume_mean,
+        rolling_volume_variance=rolling_volume_mean,
+        rolling_density_mean=rolling_density_mean,
+        rolling_density_variance=rolling_density_mean * 0.1,
+        baseline_days_available=baseline_days_available,
+        sample_dids=sample_dids,
+        sample_urls=sample_urls,
+        population_volume_median=None,
+        population_volume_dispersion=None,
+        population_density_median=None,
+        population_density_variance=None,
+    )
+
+
 class FakeDb:
     """In-memory stub for database layer, captures inserted results."""
 
@@ -72,7 +106,7 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        row = AggregatedRow(
+        row = create_test_row(
             domain='example.com',
             bucket_start=bucket,
             total_shares=100,
@@ -83,8 +117,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1', 'did2', 'did3'],
             sample_urls=['https://example.com/1', 'https://example.com/2'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [row]
@@ -123,7 +155,7 @@ class TestRunCycle:
             ),
         )
 
-        row = AggregatedRow(
+        row = create_test_row(
             domain='evil.com',
             bucket_start=bucket,
             total_shares=10,
@@ -134,8 +166,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://evil.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [row]
@@ -154,7 +184,7 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        row = AggregatedRow(
+        row = create_test_row(
             domain='normal.com',
             bucket_start=bucket,
             total_shares=10,
@@ -165,8 +195,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://normal.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [row]
@@ -186,7 +214,7 @@ class TestRunCycle:
         bucket_daily = datetime(2026, 3, 20, 0, 0, 0)
         bucket_hourly = datetime(2026, 3, 20, 12, 0, 0)
 
-        daily_row = AggregatedRow(
+        daily_row = create_test_row(
             domain='daily.com',
             bucket_start=bucket_daily,
             total_shares=50,
@@ -197,11 +225,9 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://daily.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
-        hourly_row = AggregatedRow(
+        hourly_row = create_test_row(
             domain='hourly.com',
             bucket_start=bucket_hourly,
             total_shares=5,
@@ -212,8 +238,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did2'],
             sample_urls=['https://hourly.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [daily_row]
@@ -238,7 +262,7 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        daily_row = AggregatedRow(
+        daily_row = create_test_row(
             domain='daily.com',
             bucket_start=bucket,
             total_shares=50,
@@ -249,8 +273,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://daily.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [daily_row]
@@ -271,7 +293,7 @@ class TestRunCycle:
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
         # High shares -> likely anomaly
-        anomalous_row = AggregatedRow(
+        anomalous_row = create_test_row(
             domain='anomalous.com',
             bucket_start=bucket,
             total_shares=200,
@@ -282,12 +304,10 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://anomalous.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         # Low shares -> normal
-        normal_row = AggregatedRow(
+        normal_row = create_test_row(
             domain='normal.com',
             bucket_start=bucket,
             total_shares=52,
@@ -298,8 +318,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did2'],
             sample_urls=['https://normal.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [anomalous_row, normal_row]
@@ -324,7 +342,7 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        test_row = AggregatedRow(
+        test_row = create_test_row(
             domain='test.com',
             bucket_start=bucket,
             total_shares=200,
@@ -335,8 +353,6 @@ class TestRunCycle:
             baseline_days_available=7,
             sample_dids=['did1'],
             sample_urls=['https://test.com/post'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [test_row]
