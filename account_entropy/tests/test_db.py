@@ -60,11 +60,15 @@ class TestScoredResult:
             post_count=42,
             hourly_entropy=3.5,
             interval_entropy=2.1,
+            hourly_entropy_norm=0.85,
+            interval_entropy_norm=0.53,
             mean_interval_seconds=3600.0,
             stddev_interval_seconds=1200.0,
+            interval_cv=0.3,
             is_bot_like=1,
             hourly_flag=1,
             interval_flag=0,
+            cv_flag=1,
             sample_rkeys=['rkey1', 'rkey2'],
         )
         assert result.run_timestamp == now
@@ -74,11 +78,15 @@ class TestScoredResult:
         assert result.post_count == 42
         assert result.hourly_entropy == 3.5
         assert result.interval_entropy == 2.1
+        assert result.hourly_entropy_norm == 0.85
+        assert result.interval_entropy_norm == 0.53
         assert result.mean_interval_seconds == 3600.0
         assert result.stddev_interval_seconds == 1200.0
+        assert result.interval_cv == 0.3
         assert result.is_bot_like == 1
         assert result.hourly_flag == 1
         assert result.interval_flag == 0
+        assert result.cv_flag == 1
         assert result.sample_rkeys == ['rkey1', 'rkey2']
 
     def test_includes_mean_and_stddev_interval_seconds(self) -> None:
@@ -93,11 +101,15 @@ class TestScoredResult:
             post_count=10,
             hourly_entropy=1.5,
             interval_entropy=0.8,
+            hourly_entropy_norm=0.4,
+            interval_entropy_norm=0.3,
             mean_interval_seconds=7200.0,
             stddev_interval_seconds=3600.0,
+            interval_cv=0.5,
             is_bot_like=0,
             hourly_flag=0,
             interval_flag=0,
+            cv_flag=0,
             sample_rkeys=[],
         )
         assert result.mean_interval_seconds == 7200.0
@@ -115,15 +127,20 @@ class TestScoredResult:
             post_count=5,
             hourly_entropy=1.0,
             interval_entropy=0.5,
+            hourly_entropy_norm=0.6,
+            interval_entropy_norm=0.4,
             mean_interval_seconds=3600.0,
             stddev_interval_seconds=0.0,
+            interval_cv=0.0,
             is_bot_like=0,
             hourly_flag=1,
             interval_flag=1,
+            cv_flag=0,
             sample_rkeys=['rkey1'],
         )
         assert result.hourly_flag == 1
         assert result.interval_flag == 1
+        assert result.cv_flag == 0
 
     def test_is_frozen(self) -> None:
         now = datetime(2026, 3, 20, 12, 0, 0)
@@ -137,11 +154,15 @@ class TestScoredResult:
             post_count=42,
             hourly_entropy=3.5,
             interval_entropy=2.1,
+            hourly_entropy_norm=0.85,
+            interval_entropy_norm=0.53,
             mean_interval_seconds=3600.0,
             stddev_interval_seconds=1200.0,
+            interval_cv=0.3,
             is_bot_like=1,
             hourly_flag=1,
             interval_flag=0,
+            cv_flag=1,
             sample_rkeys=['rkey1'],
         )
         with pytest.raises(AttributeError):
@@ -194,7 +215,11 @@ class TestAccountEntropyDb:
     def test_fetch_coerces_int_rkeys_to_strings(self, mock_get_client) -> None:
         """ClickHouse __action_id is numeric; sample_rkeys must be list[str]."""
         config = ClickHouseConfig(
-            host='localhost', port=8123, user='default', password='clickhouse', database='default',
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
         )
         mock_client = Mock()
         mock_get_client.return_value = mock_client
@@ -260,11 +285,15 @@ class TestAccountEntropyDb:
             post_count=42,
             hourly_entropy=3.5,
             interval_entropy=2.1,
+            hourly_entropy_norm=0.85,
+            interval_entropy_norm=0.53,
             mean_interval_seconds=3600.0,
             stddev_interval_seconds=1200.0,
+            interval_cv=0.3,
             is_bot_like=1,
             hourly_flag=1,
             interval_flag=0,
+            cv_flag=1,
             sample_rkeys=['rkey1', 'rkey2'],
         )
 
@@ -275,10 +304,22 @@ class TestAccountEntropyDb:
         assert call_args[1]['table'] == 'account_entropy_results'
 
         expected_columns = [
-            'run_timestamp', 'user_id', 'window_start', 'window_end',
-            'post_count', 'hourly_entropy', 'interval_entropy',
-            'mean_interval_seconds', 'stddev_interval_seconds',
-            'is_bot_like', 'hourly_flag', 'interval_flag',
+            'run_timestamp',
+            'user_id',
+            'window_start',
+            'window_end',
+            'post_count',
+            'hourly_entropy',
+            'interval_entropy',
+            'hourly_entropy_norm',
+            'interval_entropy_norm',
+            'mean_interval_seconds',
+            'stddev_interval_seconds',
+            'interval_cv',
+            'is_bot_like',
+            'hourly_flag',
+            'interval_flag',
+            'cv_flag',
             'sample_rkeys',
         ]
         assert call_args[1]['column_names'] == expected_columns
@@ -309,11 +350,15 @@ class TestAccountEntropyDb:
             post_count=42,
             hourly_entropy=3.5,
             interval_entropy=2.1,
+            hourly_entropy_norm=0.85,
+            interval_entropy_norm=0.53,
             mean_interval_seconds=3600.0,
             stddev_interval_seconds=1200.0,
+            interval_cv=0.3,
             is_bot_like=1,
             hourly_flag=1,
             interval_flag=0,
+            cv_flag=1,
             sample_rkeys=['rkey1', 'rkey2'],
         )
 
@@ -324,9 +369,11 @@ class TestAccountEntropyDb:
         assert len(data) == 1
 
         row_data = data[0]
-        assert row_data[10] == 1  # hourly_flag (position 10)
-        assert row_data[11] == 0  # interval_flag (position 11)
-        assert row_data[12] == ['rkey1', 'rkey2']  # sample_rkeys (position 12)
+        assert row_data[12] == 1  # is_bot_like (position 12)
+        assert row_data[13] == 1  # hourly_flag (position 13)
+        assert row_data[14] == 0  # interval_flag (position 14)
+        assert row_data[15] == 1  # cv_flag (position 15)
+        assert row_data[16] == ['rkey1', 'rkey2']  # sample_rkeys (position 16)
 
     @patch('account_entropy.db.clickhouse_connect.get_client')
     def test_insert_results_includes_interval_statistics(self, mock_get_client) -> None:
@@ -354,11 +401,15 @@ class TestAccountEntropyDb:
             post_count=42,
             hourly_entropy=3.5,
             interval_entropy=2.1,
+            hourly_entropy_norm=0.85,
+            interval_entropy_norm=0.53,
             mean_interval_seconds=7200.0,
             stddev_interval_seconds=3600.0,
+            interval_cv=0.5,
             is_bot_like=1,
             hourly_flag=1,
             interval_flag=0,
+            cv_flag=0,
             sample_rkeys=['rkey1'],
         )
 
@@ -367,5 +418,6 @@ class TestAccountEntropyDb:
         call_args = mock_client.insert.call_args
         data = call_args[1]['data']
         row_data = data[0]
-        assert row_data[7] == 7200.0  # mean_interval_seconds (position 7)
-        assert row_data[8] == 3600.0  # stddev_interval_seconds (position 8)
+        assert row_data[9] == 7200.0  # mean_interval_seconds (position 9)
+        assert row_data[10] == 3600.0  # stddev_interval_seconds (position 10)
+        assert row_data[11] == 0.5  # interval_cv (position 11)

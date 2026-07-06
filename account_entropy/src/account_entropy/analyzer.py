@@ -82,29 +82,18 @@ def compute_hourly_entropy(hourly_bins: list[int]) -> float:
     return compute_entropy(histogram)
 
 
-def compute_interval_entropy(
+def interval_histogram(
     ordered_timestamps_ms: list[int],
     bin_edges: tuple[int, ...],
-) -> tuple[float, float, float]:
-    """
-    Compute Shannon entropy of inter-post intervals.
+) -> tuple[list[int], float, float]:
+    """Histogram of inter-post intervals plus (mean, stddev) of the intervals in seconds.
 
-    Computes gaps between successive posts, bins them by configurable edges,
-    and returns entropy plus mean and standard deviation of intervals.
-
-    Bin structure: [0, edge1), [edge1, edge2), ..., [edgeN, inf)
-
-    Args:
-        ordered_timestamps_ms: Unix millisecond timestamps, sorted ascending.
-        bin_edges: Tuple of bin edge boundaries in seconds.
-                   Default: (60, 300, 900, 3600, 14400, 86400) for 7 bins.
-
-    Returns:
-        Tuple of (entropy_float, mean_interval_seconds, stddev_interval_seconds).
-        Returns (0.0, 0.0, 0.0) if fewer than 2 timestamps (no intervals).
+    Bin structure: [0, edge1), [edge1, edge2), ..., [edgeN, inf).
+    Returns ([0] * (len(bin_edges) + 1), 0.0, 0.0) when fewer than 2 timestamps.
     """
     if len(ordered_timestamps_ms) < 2:
-        return 0.0, 0.0, 0.0
+        num_bins = len(bin_edges) + 1
+        return [0] * num_bins, 0.0, 0.0
 
     intervals_seconds = [
         (ordered_timestamps_ms[i + 1] - ordered_timestamps_ms[i]) / 1000.0
@@ -127,6 +116,31 @@ def compute_interval_entropy(
         if not placed:
             histogram[-1] += 1
 
+    return histogram, mean_interval, stddev_interval
+
+
+def compute_interval_entropy(
+    ordered_timestamps_ms: list[int],
+    bin_edges: tuple[int, ...],
+) -> tuple[float, float, float]:
+    """
+    Compute Shannon entropy of inter-post intervals.
+
+    Computes gaps between successive posts, bins them by configurable edges,
+    and returns entropy plus mean and standard deviation of intervals.
+
+    Bin structure: [0, edge1), [edge1, edge2), ..., [edgeN, inf)
+
+    Args:
+        ordered_timestamps_ms: Unix millisecond timestamps, sorted ascending.
+        bin_edges: Tuple of bin edge boundaries in seconds.
+                   Default: (60, 300, 900, 3600, 14400, 86400) for 7 bins.
+
+    Returns:
+        Tuple of (entropy_float, mean_interval_seconds, stddev_interval_seconds).
+        Returns (0.0, 0.0, 0.0) if fewer than 2 timestamps (no intervals).
+    """
+    histogram, mean_interval, stddev_interval = interval_histogram(ordered_timestamps_ms, bin_edges)
     return compute_entropy(histogram), mean_interval, stddev_interval
 
 
@@ -140,16 +154,18 @@ def score_account(
     """
     Score a single account for bot-like posting behaviour.
 
-    Computes hourly and interval entropy, applies thresholds independently,
-    and flags is_bot_like only when BOTH signals cross their thresholds (conjunction).
+    Computes normalized hourly and interval entropy plus coefficient of variation,
+    applies thresholds independently, and flags is_bot_like when hourly flag is set
+    AND at least one of (interval flag or cv flag) is set (three-way conjunction).
 
     Critical threshold directions:
-    - Hourly entropy: HIGH entropy = bot-like. Flag when >= threshold (default 3.9).
-    - Interval entropy: LOW entropy = bot-like. Flag when <= threshold (default 1.5).
+    - Hourly entropy norm: HIGH entropy = bot-like. Flag when >= threshold (default 0.85).
+    - Interval entropy norm: LOW entropy = bot-like. Flag when <= threshold (default 0.53).
+    - Interval CV: LOW variability = bot-like. Flag when <= threshold (default 0.5).
 
     Args:
         row: Account activity data (hourly bins, sorted timestamps).
-        config: Analysis configuration with entropy thresholds.
+        config: Analysis configuration with normalized entropy thresholds.
         run_timestamp: Timestamp when this analysis runs.
         window_start: Start of analysis window.
         window_end: End of analysis window.
@@ -157,19 +173,24 @@ def score_account(
     Returns:
         ScoredResult with entropy scores, flags, and bot-like determination.
     """
-    hourly_entropy = compute_hourly_entropy(row.hourly_bins)
-    interval_entropy, mean_interval, stddev_interval = compute_interval_entropy(
+    hourly_hist = [0] * 24
+    for hour in row.hourly_bins:
+        hourly_hist[hour] += 1
+    hourly_entropy = compute_entropy(hourly_hist)
+    hourly_entropy_norm = normalized_entropy(hourly_hist, 24)
+
+    interval_hist, mean_interval, stddev_interval = interval_histogram(
         row.ordered_timestamps, config.interval_bin_edges
     )
+    interval_entropy = compute_entropy(interval_hist)
+    interval_entropy_norm = normalized_entropy(interval_hist, len(config.interval_bin_edges) + 1)
+    interval_cv = coefficient_of_variation(mean_interval, stddev_interval)
 
-    # High hourly entropy (near uniform) = bot signal
-    hourly_flag = 1 if hourly_entropy >= config.hourly_entropy_threshold else 0
+    hourly_flag = 1 if hourly_entropy_norm >= config.hourly_entropy_norm_threshold else 0
+    interval_flag = 1 if interval_entropy_norm <= config.interval_entropy_norm_threshold else 0
+    cv_flag = 1 if interval_cv <= config.cv_threshold else 0
 
-    # Low interval entropy (regular gaps) = bot signal
-    interval_flag = 1 if interval_entropy <= config.interval_entropy_threshold else 0
-
-    # Conjunction: both signals must fire for is_bot_like
-    is_bot_like = 1 if (hourly_flag == 1 and interval_flag == 1) else 0
+    is_bot_like = 1 if (hourly_flag == 1 and (interval_flag == 1 or cv_flag == 1)) else 0
 
     return ScoredResult(
         run_timestamp=run_timestamp,
@@ -179,11 +200,15 @@ def score_account(
         post_count=row.post_count,
         hourly_entropy=hourly_entropy,
         interval_entropy=interval_entropy,
+        hourly_entropy_norm=hourly_entropy_norm,
+        interval_entropy_norm=interval_entropy_norm,
         mean_interval_seconds=mean_interval,
         stddev_interval_seconds=stddev_interval,
+        interval_cv=interval_cv,
         is_bot_like=is_bot_like,
         hourly_flag=hourly_flag,
         interval_flag=interval_flag,
+        cv_flag=cv_flag,
         sample_rkeys=row.sample_rkeys,
     )
 

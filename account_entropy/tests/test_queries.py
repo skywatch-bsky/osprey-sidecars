@@ -11,8 +11,9 @@ def base_config() -> AnalysisConfig:
         interval_seconds=3600,
         window_days=7,
         min_posts=10,
-        hourly_entropy_threshold=3.9,
-        interval_entropy_threshold=1.5,
+        hourly_entropy_norm_threshold=0.85,
+        interval_entropy_norm_threshold=0.53,
+        cv_threshold=0.5,
         interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
         source_table='osprey_execution_results',
         output_table='account_entropy_results',
@@ -30,7 +31,7 @@ class TestAccountActivityQuery:
 
     def test_includes_user_id_not_null_filter(self, base_config: AnalysisConfig) -> None:
         query = account_activity_query(base_config)
-        assert "UserId IS NOT NULL" in query
+        assert 'UserId IS NOT NULL' in query
 
     def test_uses_window_days_from_config(self, base_config: AnalysisConfig) -> None:
         query = account_activity_query(base_config)
@@ -49,8 +50,9 @@ class TestAccountActivityQuery:
             interval_seconds=3600,
             window_days=7,
             min_posts=10,
-            hourly_entropy_threshold=3.9,
-            interval_entropy_threshold=1.5,
+            hourly_entropy_norm_threshold=0.85,
+            interval_entropy_norm_threshold=0.53,
+            cv_threshold=0.5,
             interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
             source_table='custom_execution_results',
             output_table='account_entropy_results',
@@ -63,8 +65,9 @@ class TestAccountActivityQuery:
             interval_seconds=3600,
             window_days=14,
             min_posts=10,
-            hourly_entropy_threshold=3.9,
-            interval_entropy_threshold=1.5,
+            hourly_entropy_norm_threshold=0.85,
+            interval_entropy_norm_threshold=0.53,
+            cv_threshold=0.5,
             interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
             source_table='osprey_execution_results',
             output_table='account_entropy_results',
@@ -77,8 +80,9 @@ class TestAccountActivityQuery:
             interval_seconds=3600,
             window_days=7,
             min_posts=25,
-            hourly_entropy_threshold=3.9,
-            interval_entropy_threshold=1.5,
+            hourly_entropy_norm_threshold=0.85,
+            interval_entropy_norm_threshold=0.53,
+            cv_threshold=0.5,
             interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
             source_table='osprey_execution_results',
             output_table='account_entropy_results',
