@@ -1,13 +1,15 @@
 # Account entropy sidecar
 
-Detects automated posting patterns by computing Shannon entropy over account posting timestamps. Low entropy (regular timing) indicates likely automation.
+Detects automated posting patterns using bias-corrected entropy normalized for account post volume, plus an interval regularity signal. Reads from `osprey_execution_results`, writes scored results to `account_entropy_results`.
 
 ## How it works
 
 1. Queries `osprey_execution_results` for accounts with sufficient post volume
-2. Computes Shannon entropy over inter-post timing distributions
-3. Scores accounts against configurable entropy thresholds (see config.py)
-4. Writes results to `account_entropy_results`
+2. Computes Shannon entropy over hourly posting distribution and inter-post timing intervals
+3. Applies Miller–Madow bias correction and normalizes by `log2(min(N, bins))` to a 0–1 scale
+4. Computes coefficient of variation of inter-post intervals as a regularity signal
+5. Flags accounts when hourly entropy is high AND (interval entropy is low OR regularity is extreme)
+6. Writes results to `account_entropy_results`
 
 ## Usage
 
@@ -28,9 +30,26 @@ docker run --env-file .env account-entropy
 
 ## Configuration
 
+### ClickHouse
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLICKHOUSE_HOST` | `localhost` | ClickHouse server host |
-| `CLICKHOUSE_PORT` | `8123` | ClickHouse HTTP port |
-| `CLICKHOUSE_DATABASE` | `default` | Database name |
-| `POLL_INTERVAL_SECONDS` | `300` | Seconds between analysis cycles |
+| `OSPREY_CLICKHOUSE_HOST` | `localhost` | ClickHouse server host |
+| `OSPREY_CLICKHOUSE_PORT` | `8123` | ClickHouse HTTP port |
+| `OSPREY_CLICKHOUSE_USER` | `default` | ClickHouse username |
+| `OSPREY_CLICKHOUSE_PASSWORD` | `clickhouse` | ClickHouse password |
+| `OSPREY_CLICKHOUSE_DB` | `default` | Database name |
+
+### Analysis
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ACCOUNT_ENTROPY_HOURLY_NORM_THRESHOLD` | `0.85` | Normalized hourly entropy threshold (0–1 scale); flags when ≥ threshold |
+| `ACCOUNT_ENTROPY_INTERVAL_NORM_THRESHOLD` | `0.53` | Normalized interval entropy threshold (0–1 scale); flags when ≤ threshold |
+| `ACCOUNT_ENTROPY_CV_THRESHOLD` | `0.5` | Coefficient-of-variation threshold; flags when ≤ threshold |
+| `ACCOUNT_ENTROPY_INTERVAL_SECONDS` | `3600` | Analysis window interval in seconds |
+| `ACCOUNT_ENTROPY_WINDOW_DAYS` | `7` | Lookback window in days |
+| `ACCOUNT_ENTROPY_MIN_POSTS` | `10` | Minimum posts to score an account |
+| `ACCOUNT_ENTROPY_INTERVAL_BIN_EDGES` | `60,300,900,3600,14400,86400` | Bin boundaries in seconds for inter-post interval histogram |
+| `ACCOUNT_ENTROPY_SOURCE_TABLE` | `osprey_execution_results` | Source table name |
+| `ACCOUNT_ENTROPY_OUTPUT_TABLE` | `account_entropy_results` | Output table name |
