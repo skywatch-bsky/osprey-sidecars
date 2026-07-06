@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import pytest
-from scipy.stats import nbinom, poisson
 import scipy.special
+from scipy.stats import poisson
 
 from signup_anomaly.counts import count_p_value
 
