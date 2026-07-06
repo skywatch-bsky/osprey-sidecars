@@ -55,12 +55,8 @@ class AnalysisConfig:
             window_days=int(os.environ.get('ACCOUNT_ENTROPY_WINDOW_DAYS', '7')),
             min_posts=int(os.environ.get('ACCOUNT_ENTROPY_MIN_POSTS', '10')),
             hourly_entropy_threshold=float(os.environ.get('ACCOUNT_ENTROPY_HOURLY_ENTROPY_THRESHOLD', '3.9')),
-            interval_entropy_threshold=float(
-                os.environ.get('ACCOUNT_ENTROPY_INTERVAL_ENTROPY_THRESHOLD', '1.5')
-            ),
-            interval_bin_edges=tuple(
-                int(edge.strip()) for edge in bin_edges_raw.split(',') if edge.strip()
-            ),
+            interval_entropy_threshold=float(os.environ.get('ACCOUNT_ENTROPY_INTERVAL_ENTROPY_THRESHOLD', '1.5')),
+            interval_bin_edges=tuple(int(edge.strip()) for edge in bin_edges_raw.split(',') if edge.strip()),
             source_table=_validate_table_name(
                 os.environ.get('ACCOUNT_ENTROPY_SOURCE_TABLE', 'osprey_execution_results')
             ),

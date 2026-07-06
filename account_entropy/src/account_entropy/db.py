@@ -66,10 +66,18 @@ class AccountEntropyDb:
 
     def insert_results(self, table: str, results: Sequence[ScoredResult]) -> None:
         column_names = [
-            'run_timestamp', 'user_id', 'window_start', 'window_end',
-            'post_count', 'hourly_entropy', 'interval_entropy',
-            'mean_interval_seconds', 'stddev_interval_seconds',
-            'is_bot_like', 'hourly_flag', 'interval_flag',
+            'run_timestamp',
+            'user_id',
+            'window_start',
+            'window_end',
+            'post_count',
+            'hourly_entropy',
+            'interval_entropy',
+            'mean_interval_seconds',
+            'stddev_interval_seconds',
+            'is_bot_like',
+            'hourly_flag',
+            'interval_flag',
             'sample_rkeys',
         ]
         data = [
