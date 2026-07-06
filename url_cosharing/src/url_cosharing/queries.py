@@ -11,6 +11,7 @@ def fetch_pairs_query(config: AnalysisConfig) -> str:
             account_a,
             account_b,
             weight,
+            newman_weight,
             shared_urls
         FROM {config.pairs_table}
         WHERE date = yesterday()

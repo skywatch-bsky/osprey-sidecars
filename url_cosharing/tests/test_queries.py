@@ -52,6 +52,7 @@ class TestFetchPairsQuery:
         assert 'account_a' in query
         assert 'account_b' in query
         assert 'weight' in query
+        assert 'newman_weight' in query
         assert 'shared_urls' in query
 
     def test_with_custom_table_name(self) -> None:
@@ -87,6 +88,11 @@ class TestFetchPairsQuery:
         )
         query = fetch_pairs_query(config)
         assert 'weight >= 5' in query
+
+    def test_filters_on_raw_weight_not_newman_weight(self, base_config: AnalysisConfig) -> None:
+        query = fetch_pairs_query(base_config)
+        assert 'AND weight >=' in query
+        assert 'AND newman_weight >=' not in query
 
 
 class TestFetchHistoricalMembershipQuery:

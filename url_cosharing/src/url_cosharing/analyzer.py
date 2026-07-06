@@ -17,6 +17,7 @@ class PairRow:
     account_a: str
     account_b: str
     weight: int
+    newman_weight: float
     shared_urls: list[str]
 
 
@@ -71,39 +72,44 @@ def compute_jaccard(set_a: frozenset[str], set_b: frozenset[str]) -> float:
 
 def build_graph(pairs: list[PairRow], min_edge_weight: int) -> ig.Graph:
     """
-    Build an undirected weighted graph from pairs, filtering by minimum edge weight.
+    Build an undirected weighted graph from pairs, filtering by minimum raw edge weight.
 
-    Args:
-        pairs: List of PairRow objects representing account pairs.
-        min_edge_weight: Minimum weight threshold for including an edge.
+    Duplicate (account_a, account_b) pairs are aggregated before edge creation:
+    raw weights and Newman weights are summed, shared URL lists are unioned.
+    Edges are added in a single batch with attribute lists, so the graph can
+    never contain parallel edges or None-valued attributes.
 
-    Returns:
-        igraph Graph object with vertices for each unique DID and weighted edges.
-        Returns empty graph (0 vertices, 0 edges) if no qualifying pairs.
+    Returns an empty graph (0 vertices, 0 edges) if no qualifying pairs.
     """
     filtered_pairs = [p for p in pairs if p.weight >= min_edge_weight]
 
     if not filtered_pairs:
         return ig.Graph()
 
-    unique_dids = set()
+    aggregated: dict[tuple[str, str], tuple[int, float, set[str]]] = {}
     for pair in filtered_pairs:
-        unique_dids.add(pair.account_a)
-        unique_dids.add(pair.account_b)
+        key = (pair.account_a, pair.account_b) if pair.account_a < pair.account_b else (pair.account_b, pair.account_a)
+        if key in aggregated:
+            weight, newman_weight, urls = aggregated[key]
+            aggregated[key] = (
+                weight + pair.weight,
+                newman_weight + pair.newman_weight,
+                urls | set(pair.shared_urls),
+            )
+        else:
+            aggregated[key] = (pair.weight, pair.newman_weight, set(pair.shared_urls))
 
-    sorted_dids = sorted(unique_dids)
+    sorted_dids = sorted({did for key in aggregated for did in key})
     did_to_idx = {did: idx for idx, did in enumerate(sorted_dids)}
 
     graph = ig.Graph(len(sorted_dids))
     graph.vs['name'] = sorted_dids
 
-    for pair in filtered_pairs:
-        idx_a = did_to_idx[pair.account_a]
-        idx_b = did_to_idx[pair.account_b]
-        graph.add_edges([(idx_a, idx_b)])
-        edge_id = graph.get_eid(idx_a, idx_b)
-        graph.es[edge_id]['weight'] = pair.weight
-        graph.es[edge_id]['shared_urls'] = pair.shared_urls
+    sorted_keys = sorted(aggregated)
+    graph.add_edges([(did_to_idx[a], did_to_idx[b]) for a, b in sorted_keys])
+    graph.es['weight'] = [aggregated[key][0] for key in sorted_keys]
+    graph.es['newman_weight'] = [aggregated[key][1] for key in sorted_keys]
+    graph.es['shared_urls'] = [sorted(aggregated[key][2]) for key in sorted_keys]
 
     return graph
 
@@ -112,8 +118,14 @@ def cluster_graph(graph: ig.Graph, resolution: float, min_cluster_size: int) -> 
     """
     Run Leiden community detection on a weighted graph and compute per-cluster metrics.
 
+    Community detection is optimized over Newman-weighted edges, where weights are
+    assigned using Newman's collaboration weighting (Σ 1/(k_url − 1) per pair). This
+    down-weights viral URLs that appear in many shares. The CPM resolution parameter
+    compares edge-weight density against the threshold; after switching to Newman weights,
+    the default resolution may require re-tuning to maintain desired cluster density.
+
     Args:
-        graph: igraph Graph object with weighted edges and shared_urls attributes.
+        graph: igraph Graph object with weighted edges (weight, newman_weight) and shared_urls attributes.
         resolution: CPM resolution parameter for Leiden algorithm.
         min_cluster_size: Minimum number of members required to keep a cluster.
 
@@ -126,7 +138,7 @@ def cluster_graph(graph: ig.Graph, resolution: float, min_cluster_size: int) -> 
     partition = leidenalg.find_partition(
         graph,
         leidenalg.CPMVertexPartition,
-        weights='weight',
+        weights='newman_weight',
         resolution_parameter=resolution,
     )
 

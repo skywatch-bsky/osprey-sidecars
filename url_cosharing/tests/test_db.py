@@ -16,12 +16,14 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=5,
+            newman_weight=2.5,
             shared_urls=['https://example.com', 'https://test.com'],
         )
         assert row.date == date(2026, 3, 22)
         assert row.account_a == 'did:plc:user1'
         assert row.account_b == 'did:plc:user2'
         assert row.weight == 5
+        assert row.newman_weight == 2.5
         assert row.shared_urls == ['https://example.com', 'https://test.com']
 
     def test_create_with_empty_urls(self) -> None:
@@ -30,6 +32,7 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=1,
+            newman_weight=0.5,
             shared_urls=[],
         )
         assert row.shared_urls == []
@@ -40,6 +43,7 @@ class TestPairRow:
             account_a='did:plc:user1',
             account_b='did:plc:user2',
             weight=5,
+            newman_weight=2.5,
             shared_urls=['https://example.com'],
         )
         with pytest.raises(AttributeError):
@@ -104,8 +108,8 @@ class TestCosharingDb:
 
         mock_result = Mock()
         mock_result.result_rows = [
-            (date(2026, 3, 22), 'did:plc:user1', 'did:plc:user2', 5, ['https://example.com', 'https://test.com']),
-            (date(2026, 3, 22), 'did:plc:user3', 'did:plc:user4', 2, []),
+            (date(2026, 3, 22), 'did:plc:user1', 'did:plc:user2', 5, 2.5, ['https://example.com', 'https://test.com']),
+            (date(2026, 3, 22), 'did:plc:user3', 'did:plc:user4', 2, 1.0, []),
         ]
         mock_client.query.return_value = mock_result
 
@@ -116,10 +120,12 @@ class TestCosharingDb:
         assert rows[0].account_a == 'did:plc:user1'
         assert rows[0].account_b == 'did:plc:user2'
         assert rows[0].weight == 5
+        assert rows[0].newman_weight == 2.5
         assert rows[0].shared_urls == ['https://example.com', 'https://test.com']
 
         assert rows[1].account_a == 'did:plc:user3'
         assert rows[1].weight == 2
+        assert rows[1].newman_weight == 1.0
         assert rows[1].shared_urls == []
 
     @patch('url_cosharing.db.clickhouse_connect.get_client')

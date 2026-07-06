@@ -160,6 +160,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=5 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -167,6 +168,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=4 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -174,6 +176,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=3 / 2,
                 shared_urls=['https://example.com'],
             ),
         ]
@@ -221,6 +224,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=5 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -228,6 +232,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=4 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -235,6 +240,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=3 / 2,
                 shared_urls=['https://example.com'],
             ),
         ]
@@ -262,6 +268,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=5 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -269,6 +276,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=4 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -276,6 +284,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=3 / 2,
                 shared_urls=['https://example.com'],
             ),
         ]
@@ -306,6 +315,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=5 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -313,6 +323,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=4 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -320,6 +331,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=3 / 2,
                 shared_urls=['https://example.com'],
             ),
         ]
@@ -356,6 +368,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=5 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -363,6 +376,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=4 / 2,
                 shared_urls=['https://example.com'],
             ),
             PairRow(
@@ -370,6 +384,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=3 / 2,
                 shared_urls=['https://example.com'],
             ),
         ]
