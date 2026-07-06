@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from url_overdispersion.config import ClickHouseConfig
 from url_overdispersion.db import AggregatedRow, ScoredResult, UrlOverdispersionDb
 
 
@@ -329,9 +328,6 @@ class TestUrlOverdispersionDb:
             ),
         ]
 
-        config = ClickHouseConfig(
-            host='localhost', port=8123, user='default', password='pw', database='default'
-        )
         db = UrlOverdispersionDb.__new__(UrlOverdispersionDb)
         db._client = mock_client
 
