@@ -118,14 +118,8 @@ def cluster_graph(graph: ig.Graph, resolution: float, min_cluster_size: int) -> 
     """
     Run Leiden community detection on a weighted graph and compute per-cluster metrics.
 
-    Community detection is optimized over Newman-weighted edges, where weights are
-    assigned using Newman's collaboration weighting (Σ 1/(k_url − 1) per pair). This
-    down-weights viral URLs that appear in many shares. The CPM resolution parameter
-    compares edge-weight density against the threshold; after switching to Newman weights,
-    the default resolution may require re-tuning to maintain desired cluster density.
-
     Args:
-        graph: igraph Graph object with weighted edges (weight, newman_weight) and shared_urls attributes.
+        graph: igraph Graph object with weighted edges and shared_urls attributes.
         resolution: CPM resolution parameter for Leiden algorithm.
         min_cluster_size: Minimum number of members required to keep a cluster.
 
@@ -138,7 +132,7 @@ def cluster_graph(graph: ig.Graph, resolution: float, min_cluster_size: int) -> 
     partition = leidenalg.find_partition(
         graph,
         leidenalg.CPMVertexPartition,
-        weights='newman_weight',
+        weights='weight',
         resolution_parameter=resolution,
     )
 
