@@ -28,9 +28,10 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert "OperationKind = 'create'" in query
 
-    def test_includes_having_min_sharers_filter(self, base_config: AnalysisConfig) -> None:
+    def test_min_sharers_in_scored_entities_and_final_where(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert f'HAVING unique_sharers >= {base_config.min_sharers}' in query
+        assert 'HAVING unique_sharers' not in query
+        assert f'AND b.unique_sharers >= {base_config.min_sharers}' in query
 
     def test_uses_source_table_from_config(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
@@ -60,22 +61,36 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert 'arraySlice(groupArray(DISTINCT UserId), 1, 5)' in query
 
-    def test_includes_sharer_density(self, base_config: AnalysisConfig) -> None:
-        query = daily_aggregation_query(base_config)
-        assert 'toFloat64(unique_sharers) / total_shares AS sharer_density' in query
-
-    def test_includes_rolling_averages(self, base_config: AnalysisConfig) -> None:
-        query = daily_aggregation_query(base_config)
-        assert 'avg(total_shares) OVER w AS rolling_volume_mean' in query
-        assert 'avg(toFloat64(unique_sharers) / total_shares) OVER w AS rolling_density_mean' in query
-
     def test_quoted_uri_in_group_by(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'GROUP BY quoted_uri, bucket' in query
 
     def test_quoted_uri_in_partition_by(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'PARTITION BY quoted_uri ORDER BY bucket' in query
+        assert 'PARTITION BY quoted_uri' in query
+
+    def test_uses_densified_pipeline(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'raw_shares' in query
+        assert 'scored_entities' in query
+        assert 'entities' in query
+        assert 'calendar' in query
+        assert 'dense' in query
+
+    def test_uses_median_exact_for_volume(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'medianExact(total_shares) OVER w' in query
+
+    def test_includes_rolling_median_and_variance(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'rolling_volume_median' in query
+        assert 'rolling_volume_variance' in query
+        assert 'rolling_density_variance' in query
+
+    def test_includes_population_dispersion(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'population_volume_dispersion' in query
+        assert 'population_density_variance' in query
 
     def test_with_custom_min_sharers(self) -> None:
         config = AnalysisConfig(
@@ -89,7 +104,8 @@ class TestDailyAggregationQuery:
             output_table='quote_overdispersion_results',
         )
         query = daily_aggregation_query(config)
-        assert 'HAVING unique_sharers >= 10' in query
+        assert 'HAVING unique_sharers' not in query
+        assert 'AND b.unique_sharers >= 10' in query
 
     def test_with_custom_table_names(self) -> None:
         config = AnalysisConfig(
@@ -120,21 +136,24 @@ class TestHourlyAggregationQuery:
         query = hourly_aggregation_query(base_config)
         assert "OperationKind = 'create'" in query
 
-    def test_includes_having_min_sharers_filter(self, base_config: AnalysisConfig) -> None:
+    def test_min_sharers_in_scored_entities_and_final_where(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'HAVING unique_sharers >= {base_config.min_sharers}' in query
+        assert 'HAVING unique_sharers' not in query
+        assert f'AND b.unique_sharers >= {base_config.min_sharers}' in query
 
     def test_uses_source_table_from_config(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert base_config.source_table in query
 
-    def test_uses_baseline_days_for_hours_calculation(self, base_config: AnalysisConfig) -> None:
+    def test_uses_baseline_days_unscaled_for_rows(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'ROWS BETWEEN {base_config.baseline_days * 24} PRECEDING' in query
+        assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING' in query
+        assert f'ROWS BETWEEN {base_config.baseline_days * 24} PRECEDING' not in query
 
-    def test_uses_cold_start_threshold_for_hours(self, base_config: AnalysisConfig) -> None:
+    def test_uses_cold_start_threshold_unscaled(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'>= {base_config.cold_start_min_days * 24}' in query
+        assert f'>= {base_config.cold_start_min_days}' in query
+        assert f'>= {base_config.cold_start_min_days * 24}' not in query
 
     def test_uses_hour_bucketing(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
@@ -152,26 +171,29 @@ class TestHourlyAggregationQuery:
         query = hourly_aggregation_query(base_config)
         assert 'arraySlice(groupArray(DISTINCT UserId), 1, 5)' in query
 
-    def test_includes_sharer_density(self, base_config: AnalysisConfig) -> None:
-        query = hourly_aggregation_query(base_config)
-        assert 'toFloat64(unique_sharers) / total_shares AS sharer_density' in query
-
-    def test_includes_rolling_averages(self, base_config: AnalysisConfig) -> None:
-        query = hourly_aggregation_query(base_config)
-        assert 'avg(total_shares) OVER w AS rolling_volume_mean' in query
-        assert 'avg(toFloat64(unique_sharers) / total_shares) OVER w AS rolling_density_mean' in query
-
-    def test_converts_baseline_hours_to_days(self, base_config: AnalysisConfig) -> None:
-        query = hourly_aggregation_query(base_config)
-        assert 'toUInt16(intDiv(b.baseline_buckets_available, 24))' in query
-
     def test_quoted_uri_in_group_by(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert 'GROUP BY quoted_uri, bucket' in query
 
-    def test_quoted_uri_in_partition_by(self, base_config: AnalysisConfig) -> None:
+    def test_uses_densified_pipeline(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'PARTITION BY quoted_uri ORDER BY bucket' in query
+        assert 'raw_shares' in query
+        assert 'scored_entities' in query
+        assert 'entities' in query
+        assert 'calendar' in query
+        assert 'dense' in query
+
+    def test_hour_of_day_matching(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'PARTITION BY quoted_uri, toHour(bucket)' in query
+
+    def test_no_intDiv_in_query(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'intDiv' not in query
+
+    def test_baseline_days_available_unscaled(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'toUInt16(b.baseline_buckets_available)' in query
 
     def test_with_custom_min_sharers(self) -> None:
         config = AnalysisConfig(
@@ -185,7 +207,8 @@ class TestHourlyAggregationQuery:
             output_table='quote_overdispersion_results',
         )
         query = hourly_aggregation_query(config)
-        assert 'HAVING unique_sharers >= 10' in query
+        assert 'HAVING unique_sharers' not in query
+        assert 'AND b.unique_sharers >= 10' in query
 
     def test_with_custom_table_names(self) -> None:
         config = AnalysisConfig(
