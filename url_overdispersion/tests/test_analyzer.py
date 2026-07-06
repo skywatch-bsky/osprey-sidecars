@@ -217,7 +217,7 @@ class TestDetermineVariances:
             population_density_median=0.15,
             population_density_variance=0.03,
         )
-        volume_var, density_var = determine_variances(row, cold_start_min_days=3, baseline_source='entity')
+        volume_var, density_var = determine_variances(row, baseline_source='entity')
         # phi = 15.0 / 10.0 = 1.5 > 1
         # volume_variance = phi * median = 1.5 * 20.0 = 30.0
         assert volume_var == pytest.approx(30.0)
@@ -244,7 +244,7 @@ class TestDetermineVariances:
             population_density_median=0.15,
             population_density_variance=0.03,
         )
-        volume_var, density_var = determine_variances(row, cold_start_min_days=3, baseline_source='entity')
+        volume_var, density_var = determine_variances(row, baseline_source='entity')
         # phi = 10.0 / 10.0 = 1.0 <= 1 -> None
         assert volume_var is None
         assert density_var == 0.05
@@ -270,7 +270,7 @@ class TestDetermineVariances:
             population_density_median=0.15,
             population_density_variance=0.03,
         )
-        volume_var, density_var = determine_variances(row, cold_start_min_days=3, baseline_source='entity')
+        volume_var, density_var = determine_variances(row, baseline_source='entity')
         assert volume_var is None
         assert density_var == 0.05
 
@@ -295,7 +295,7 @@ class TestDetermineVariances:
             population_density_median=0.15,
             population_density_variance=0.03,
         )
-        volume_var, density_var = determine_variances(row, cold_start_min_days=3, baseline_source='population')
+        volume_var, density_var = determine_variances(row, baseline_source='population')
         # volume_variance = dispersion_factor * median = 1.8 * 10.0 = 18.0
         assert volume_var == pytest.approx(18.0)
         assert density_var == 0.03
@@ -321,7 +321,7 @@ class TestDetermineVariances:
             population_density_median=0.15,
             population_density_variance=0.03,
         )
-        volume_var, density_var = determine_variances(row, cold_start_min_days=3, baseline_source='population')
+        volume_var, density_var = determine_variances(row, baseline_source='population')
         assert volume_var is None
         assert density_var == 0.03
 

@@ -48,7 +48,6 @@ def determine_baseline(
 
 def determine_variances(
     row: AggregatedRow,
-    cold_start_min_days: int,
     baseline_source: str,
 ) -> tuple[float | None, float | None]:
     """
@@ -104,7 +103,7 @@ def score_row(
         config.cold_start_min_days,
     )
 
-    volume_variance, density_variance = determine_variances(row, config.cold_start_min_days, baseline_source)
+    volume_variance, density_variance = determine_variances(row, baseline_source)
 
     volume_p_value = count_p_value(row.total_shares, expected_volume_lambda, volume_variance)
     density_p_value_ = density_p_value(
