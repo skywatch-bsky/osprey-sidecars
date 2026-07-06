@@ -292,26 +292,27 @@ class TestScoreAccount:
         window_end: datetime,
     ) -> None:
         # AC5.4 (CV path): Metronomic intervals (CV = 0) trigger cv_flag
-        # 20 posts with exactly 3600s intervals -> stddev = 0, CV = 0 <= 0.5 threshold
-        # Spread across 10 distinct hours -> hourly_entropy_norm >= 0.85
+        # 24 posts with exactly 3600s intervals -> stddev = 0, CV = 0 <= 0.5 threshold
+        # Spread across all 24 distinct hours -> hourly_entropy_norm >= 0.85
         # Regular 3600s intervals -> interval_entropy_norm likely <= 0.53
-        hourly_bins = [i % 10 for i in range(20)]  # Spread across 10 hours
-        timestamps_ms = [i * 3600 * 1000 for i in range(20)]  # Exactly 3600s apart
+        hourly_bins = list(range(24))  # Spread across all 24 hours to exceed 0.85 threshold
+        timestamps_ms = [i * 3600 * 1000 for i in range(24)]  # Exactly 3600s apart
 
         row = AccountActivityRow(
             user_id='metronomic-bot',
-            post_count=20,
+            post_count=24,
             hourly_bins=hourly_bins,
             ordered_timestamps=timestamps_ms,
             sample_rkeys=['rkey1'],
         )
         result = score_account(row, base_config, run_timestamp, window_start, window_end)
-        # CV should be 0 (perfect regularity)
+        # Verify cv_flag is set
         assert result.interval_cv == pytest.approx(0.0, abs=1e-10)
         assert result.cv_flag == 1
-        # With hourly_flag=1 and cv_flag=1, is_bot_like should be 1
-        if result.hourly_flag == 1:
-            assert result.is_bot_like == 1
+        # Verify hourly_flag is set (uniform 24 hours)
+        assert result.hourly_flag == 1
+        # Conjunction: hourly_flag=1 and cv_flag=1 -> is_bot_like=1
+        assert result.is_bot_like == 1
 
     def test_ac5_4_cv_high_variation_no_flag(
         self,
@@ -368,32 +369,33 @@ class TestScoreAccount:
 
         # Case (b): hourly=1, interval=0, cv=0 -> is_bot_like=0
         # High hourly entropy, but neither interval nor cv flags
-        # Create 24 posts spread across 24 hours with highly irregular intervals
+        # Create 24 posts spread across 24 hours with highly varied intervals to push interval_entropy_norm > 0.53
+        # Intervals will span all interval bins to maximize entropy
         timestamps_b = [
-            0,
-            50 * 1000,
-            250 * 1000,
-            1150 * 1000,
-            5150 * 1000,
-            10150 * 1000,
-            50150 * 1000,
-            60150 * 1000,
-            70150 * 1000,
-            80150 * 1000,
-            90150 * 1000,
-            100150 * 1000,
-            110150 * 1000,
-            120150 * 1000,
-            130150 * 1000,
-            140150 * 1000,
-            150150 * 1000,
-            160150 * 1000,
-            170150 * 1000,
-            180150 * 1000,
-            190150 * 1000,
-            200150 * 1000,
-            210150 * 1000,
-            220150 * 1000,
+            0,  # start
+            10 * 1000,  # 10s -> bin [0, 60)
+            70 * 1000,  # 60s -> bin [60, 300)
+            370 * 1000,  # 300s -> bin [300, 900)
+            1270 * 1000,  # 900s -> bin [900, 3600)
+            5270 * 1000,  # 4000s -> bin [3600, 14400)
+            19270 * 1000,  # 14000s -> bin [14400, inf)
+            25270 * 1000,  # 6000s -> bin [3600, 14400)
+            50270 * 1000,  # 25000s -> bin [14400, inf)
+            60270 * 1000,  # 10000s -> bin [3600, 14400)
+            65270 * 1000,  # 5000s -> bin [3600, 14400)
+            100270 * 1000,  # 35000s -> bin [14400, inf)
+            150270 * 1000,  # 50000s -> bin [14400, inf)
+            151270 * 1000,  # 1000s -> bin [900, 3600)
+            200270 * 1000,  # 49000s -> bin [14400, inf)
+            250270 * 1000,  # 50000s -> bin [14400, inf)
+            251270 * 1000,  # 1000s -> bin [900, 3600)
+            300270 * 1000,  # 49000s -> bin [14400, inf)
+            400270 * 1000,  # 100000s -> bin [14400, inf)
+            401270 * 1000,  # 1000s -> bin [900, 3600)
+            450270 * 1000,  # 49000s -> bin [14400, inf)
+            500270 * 1000,  # 50000s -> bin [14400, inf)
+            501270 * 1000,  # 1000s -> bin [900, 3600)
+            550270 * 1000,  # 49000s -> bin [14400, inf)
         ]
         row_b = AccountActivityRow(
             user_id='b-hourly-only',
@@ -403,9 +405,14 @@ class TestScoreAccount:
             sample_rkeys=['rkey1'],
         )
         result_b = score_account(row_b, base_config, run_timestamp, window_start, window_end)
-        # If hourly=1 but both interval and cv are 0, is_bot_like=0
-        if result_b.hourly_flag == 1 and result_b.interval_flag == 0 and result_b.cv_flag == 0:
-            assert result_b.is_bot_like == 0
+        # Verify hourly_flag is set
+        assert result_b.hourly_flag == 1
+        # Verify interval_flag is NOT set (high interval entropy due to mixed intervals)
+        assert result_b.interval_flag == 0
+        # Verify cv_flag is NOT set (CV should be high from varied intervals)
+        assert result_b.cv_flag == 0
+        # Conjunction fails: hourly=1 but neither interval nor cv -> is_bot_like=0
+        assert result_b.is_bot_like == 0
 
         # Case (c): hourly=0, interval=1, cv=1 -> is_bot_like=0
         # Concentrated in few hours, low interval entropy, low CV
