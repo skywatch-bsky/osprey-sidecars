@@ -24,7 +24,7 @@ Functional Core / Imperative Shell:
 Cold-start handling: when a PDS has fewer than `cold_start_min_days` of history, the analyzer falls back to population median lambda as baseline and population dispersion factor for NB fitting.
 
 ## Dependencies
-- **Uses**: ClickHouse (`osprey_execution_results` read, `pds_signup_anomalies` write)
+- **Uses**: ClickHouse (`osprey_execution_results` read, `pds_signup_anomalies` write); `scipy` for the NB/Poisson distributions in `counts.py`
 - **Used by**: Nothing yet (results table available for UI/alerting)
 - **Boundary**: No imports from osprey_worker or example_plugins -- fully standalone
 

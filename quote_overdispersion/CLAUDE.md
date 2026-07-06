@@ -22,7 +22,7 @@ Functional Core / Imperative Shell:
 
 - **Input:** `osprey_execution_results` (posts with embedded quote-post URIs, filtered to `Collection = 'app.bsky.feed.post'` and `OperationKind = 'create'`)
 - **Output:** `quote_overdispersion_results` (scored quoted URIs per time bucket with volume and density anomaly scores, q-values, and diagnostic columns)
-- **Dependencies:** ClickHouse only. No imports from osprey_worker or other sidecars.
+- **Dependencies:** ClickHouse (`clickhouse-connect`) for data; `scipy` for the NB/Poisson/beta-binomial/binomial distributions in `counts.py` and `density.py`. No imports from osprey_worker or other sidecars.
 
 ## Methodology
 
