@@ -623,7 +623,7 @@ class TestClusterGraph:
 
         Scenario: Two cliques (A-B and C-D) with high internal Newman weight (5.0),
         connected by a weak bridge (B-C) with high raw weight (10) but low Newman weight
-        (0.001) due to viral URI. With resolution 0.05, Newton weights should keep them
+        (0.001) due to viral URI. With resolution 0.05, Newman weights should keep them
         as two clusters while raw weights would merge them.
         """
         pairs = [
