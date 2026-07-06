@@ -161,6 +161,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -168,6 +169,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -175,6 +177,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
         ]
@@ -222,6 +225,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -229,6 +233,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -236,6 +241,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
         ]
@@ -263,6 +269,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -270,6 +277,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -277,6 +285,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
         ]
@@ -307,6 +316,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -314,6 +324,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -321,6 +332,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
         ]
@@ -357,6 +369,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user2',
                 weight=5,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -364,6 +377,7 @@ class TestRunCycle:
                 account_a='did:plc:user1',
                 account_b='did:plc:user3',
                 weight=4,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
             PairRow(
@@ -371,6 +385,7 @@ class TestRunCycle:
                 account_a='did:plc:user2',
                 account_b='did:plc:user3',
                 weight=3,
+                newman_weight=1.0,
                 shared_uris=['at://did:plc:user1/app.bsky.feed.post/abc123'],
             ),
         ]

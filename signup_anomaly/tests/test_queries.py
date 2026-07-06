@@ -82,35 +82,55 @@ class TestDailyAggregationQuery:
         assert 'ifNotFinite(varPop(signup_count) OVER' in query
         assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING AND 1 PRECEDING' in query
 
-    def test_includes_dispersion_index_mean_guard(self, base_config: AnalysisConfig) -> None:
+    def test_includes_densification(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'WHEN avg(signup_count) OVER' in query
-        assert '>= 1.0' in query
-        assert 'ELSE NULL' in query
-        assert 'AS dispersion_index' in query
+        assert 'CROSS JOIN calendar' in query
+        assert f'numbers({base_config.baseline_days + 1})' in query
+        assert 'LEFT JOIN raw_counts' in query
+        assert 'coalesce(r.signup_count, 0)' in query
+        assert 'c.day >= h.first_seen' in query
 
-    def test_includes_dispersion_index_division(self, base_config: AnalysisConfig) -> None:
+    def test_includes_rolling_median(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'varPop(signup_count) OVER' in query
-        assert 'NULLIF(avg(signup_count) OVER' in query
-        assert 'AS dispersion_index' in query
+        assert 'medianExact(signup_count) OVER w' in query
 
-    def test_includes_population_dispersion_median_formula(self, base_config: AnalysisConfig) -> None:
+    def test_dispersion_index_no_longer_guarded_at_1_0(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'median(dispersion_index) AS population_dispersion_index' in query
-        assert 'dispersion_index IS NOT NULL' in query
+        assert 'dispersion_index IS NOT NULL' not in query
+        assert '>= 1.0' not in query
+
+    def test_population_stats_computes_unbiased_median(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'median(rolling_median) AS population_median_lambda' in query
+        assert (
+            'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index'
+            in query
+        )
+
+    def test_includes_dispersion_index_computation(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'if(b.rolling_mean > 0, b.rolling_variance / b.rolling_mean, NULL) AS dispersion_index' in query
 
     def test_select_includes_rolling_variance_column(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'b.rolling_variance' in query
 
+    def test_select_includes_rolling_median_column(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'b.rolling_median' in query
+
     def test_select_includes_dispersion_index_column(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert 'b.dispersion_index' in query
+        assert 'if(b.rolling_mean > 0, b.rolling_variance / b.rolling_mean, NULL) AS dispersion_index' in query
 
     def test_select_includes_population_dispersion_index_column(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'p.population_dispersion_index' in query
+
+    def test_filters_zero_current_count_rows(self, base_config: AnalysisConfig) -> None:
+        """Zero-signup hosts are excluded from the BH-FDR family to avoid inflating n."""
+        query = daily_aggregation_query(base_config)
+        assert 'AND b.signup_count > 0' in query
 
 
 class TestHourlyAggregationQuery:
@@ -143,13 +163,18 @@ class TestHourlyAggregationQuery:
         query = hourly_aggregation_query(base_config)
         assert base_config.source_table in query
 
-    def test_uses_baseline_days_for_hours_calculation(self, base_config: AnalysisConfig) -> None:
+    def test_uses_baseline_days_from_config_unscaled(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'ROWS BETWEEN {base_config.baseline_days * 24} PRECEDING' in query
+        assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING AND 1 PRECEDING' in query
 
-    def test_uses_cold_start_threshold_for_hours(self, base_config: AnalysisConfig) -> None:
+    def test_uses_cold_start_threshold_from_config_unscaled(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'>= {base_config.cold_start_min_days * 24}' in query
+        assert f'>= {base_config.cold_start_min_days}' in query
+
+    def test_old_continuous_window_removed(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert '168 PRECEDING' not in query
+        assert 'intDiv' not in query
 
     def test_with_minimal_excluded_hosts(self) -> None:
         config = AnalysisConfig(
@@ -174,34 +199,51 @@ class TestHourlyAggregationQuery:
     def test_includes_variance_window_function(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert 'ifNotFinite(varPop(signup_count) OVER' in query
-        assert f'ROWS BETWEEN {base_config.baseline_days * 24} PRECEDING AND 1 PRECEDING' in query
+        assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING AND 1 PRECEDING' in query
 
-    def test_includes_dispersion_index_mean_guard(self, base_config: AnalysisConfig) -> None:
+    def test_includes_hour_of_day_matching(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'WHEN avg(signup_count) OVER' in query
-        assert '>= 1.0' in query
-        assert 'ELSE NULL' in query
-        assert 'AS dispersion_index' in query
+        assert 'PARTITION BY pds_host, toHour(bucket)' in query
 
-    def test_includes_dispersion_index_division(self, base_config: AnalysisConfig) -> None:
+    def test_includes_hourly_densification(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'varPop(signup_count) OVER' in query
-        assert 'NULLIF(avg(signup_count) OVER' in query
-        assert 'AS dispersion_index' in query
+        assert f'numbers({(base_config.baseline_days + 1) * 24})' in query
+        assert 'toIntervalHour(number)' in query
+        assert 'LEFT JOIN raw_counts' in query
+        assert 'coalesce(r.signup_count, 0)' in query
+
+    def test_includes_rolling_median(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'medianExact(signup_count) OVER w' in query
 
     def test_includes_population_dispersion_median_formula(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'median(dispersion_index) AS population_dispersion_index' in query
-        assert 'dispersion_index IS NOT NULL' in query
+        assert (
+            'median(if(rolling_mean > 0, rolling_variance / rolling_mean, NULL)) AS population_dispersion_index'
+            in query
+        )
+
+    def test_includes_dispersion_index_computation(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'if(b.rolling_mean > 0, b.rolling_variance / b.rolling_mean, NULL) AS dispersion_index' in query
 
     def test_select_includes_rolling_variance_column(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert 'b.rolling_variance' in query
 
+    def test_select_includes_rolling_median_column(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'b.rolling_median' in query
+
     def test_select_includes_dispersion_index_column(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert 'b.dispersion_index' in query
+        assert 'if(b.rolling_mean > 0, b.rolling_variance / b.rolling_mean, NULL) AS dispersion_index' in query
 
     def test_select_includes_population_dispersion_index_column(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert 'p.population_dispersion_index' in query
+
+    def test_filters_zero_current_count_rows(self, base_config: AnalysisConfig) -> None:
+        """Zero-signup hosts are excluded from the BH-FDR family to avoid inflating n."""
+        query = hourly_aggregation_query(base_config)
+        assert 'AND b.signup_count > 0' in query

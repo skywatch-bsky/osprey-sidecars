@@ -11,10 +11,10 @@ def fetch_pairs_query(config: AnalysisConfig) -> str:
             account_a,
             account_b,
             weight,
+            newman_weight,
             shared_uris
         FROM {config.pairs_table}
         WHERE date = yesterday()
-            AND weight >= {config.min_edge_weight}
     """
 
 

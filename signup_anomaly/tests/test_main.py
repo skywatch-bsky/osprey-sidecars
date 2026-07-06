@@ -19,7 +19,7 @@ class FakeDb:
 
     def fetch_aggregated_rows(self, query: str) -> list[AggregatedRow]:
         """Returns pre-configured rows based on query content."""
-        if 'daily_counts' in query:
+        if 'raw_counts' in query and 'toDate' in query:
             return self.daily_rows
         else:
             return self.hourly_rows
@@ -74,6 +74,7 @@ class TestRunCycle:
             pds_host='anomalous.com',
             observed_count=200,
             distinct_accounts=200,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
@@ -86,6 +87,7 @@ class TestRunCycle:
             pds_host='normal.com',
             observed_count=52,
             distinct_accounts=52,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did3', 'did4'],
@@ -111,15 +113,16 @@ class TestRunCycle:
             assert result.observed_count is not None
             assert result.expected_lambda is not None
             assert result.p_value is not None
+            assert result.q_value is not None
             assert result.is_anomaly is not None
             assert result.baseline_source is not None
             assert result.baseline_days_available is not None
             assert result.sample_dids is not None
 
-        # Verify anomalous PDS has is_anomaly=1 and p_value < 0.01
+        # Verify anomalous PDS has is_anomaly=1 and q_value < 0.01 (daily threshold)
         anomalous_result = next(r for r in fake_db.captured_results if r.pds_host == 'anomalous.com')
         assert anomalous_result.is_anomaly == 1
-        assert anomalous_result.p_value < 0.01
+        assert anomalous_result.q_value < 0.01
 
     def test_ac5_1_daily_threshold_correctly_applied(
         self,
@@ -129,11 +132,12 @@ class TestRunCycle:
         fake_db = FakeDb()
 
         # Create borderline case: p-value between 0.01 and 0.05
-        # With observed=65, rolling_mean=50, p-value ≈ 0.0236
+        # With observed=65, rolling_median=50, p-value ≈ 0.0236
         borderline_row = AggregatedRow(
             pds_host='borderline.com',
             observed_count=65,
             distinct_accounts=65,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -154,8 +158,10 @@ class TestRunCycle:
         # p-value should be between thresholds
         assert 0.01 < daily_result.p_value < 0.05
 
-        # Should NOT be flagged as anomaly since p > 0.01 (daily threshold)
+        # Should NOT be flagged as anomaly since q > 0.01 (daily FDR threshold)
+        # With only 1 row, q = p, so q should also be between thresholds
         assert daily_result.is_anomaly == 0
+        assert daily_result.q_value > 0.01
 
     def test_ac5_2_hourly_threshold_correctly_applied(
         self,
@@ -165,11 +171,12 @@ class TestRunCycle:
         fake_db = FakeDb()
 
         # Same borderline case for hourly
-        # With observed=65, rolling_mean=50, p-value ≈ 0.0236
+        # With observed=65, rolling_median=50, p-value ≈ 0.0236
         borderline_row = AggregatedRow(
             pds_host='borderline.com',
             observed_count=65,
             distinct_accounts=65,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -190,8 +197,10 @@ class TestRunCycle:
         # p-value should be between thresholds
         assert 0.01 < hourly_result.p_value < 0.05
 
-        # SHOULD be flagged as anomaly since p < 0.05 (hourly threshold)
+        # SHOULD be flagged as anomaly since q < 0.05 (hourly FDR threshold)
+        # With only 1 row, q = p, so q should also be between thresholds
         assert hourly_result.is_anomaly == 1
+        assert hourly_result.q_value < 0.05
 
     def test_ac5_3_granularity_enum_in_output(
         self,
@@ -204,6 +213,7 @@ class TestRunCycle:
             pds_host='daily.com',
             observed_count=50,
             distinct_accounts=50,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -216,6 +226,7 @@ class TestRunCycle:
             pds_host='hourly.com',
             observed_count=50,
             distinct_accounts=50,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did2'],
@@ -251,6 +262,7 @@ class TestRunCycle:
             pds_host='daily.com',
             observed_count=50,
             distinct_accounts=50,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -280,6 +292,7 @@ class TestRunCycle:
             pds_host='anomalous.com',
             observed_count=200,
             distinct_accounts=200,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -292,6 +305,7 @@ class TestRunCycle:
             pds_host='normal.com',
             observed_count=52,
             distinct_accounts=52,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did2'],
@@ -327,6 +341,7 @@ class TestRunCycle:
             pds_host='test.com',
             observed_count=200,
             distinct_accounts=200,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -360,6 +375,7 @@ class TestRunCycle:
             pds_host='dispersion.com',
             observed_count=100,
             distinct_accounts=100,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
@@ -392,6 +408,7 @@ class TestRunCycle:
             pds_host='coldstart.com',
             observed_count=100,
             distinct_accounts=100,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=1,
             sample_dids=['did1'],
@@ -424,6 +441,7 @@ class TestRunCycle:
             pds_host='meanguard.com',
             observed_count=50,
             distinct_accounts=50,
+            rolling_median=0.3,
             rolling_mean=0.3,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -456,6 +474,7 @@ class TestRunCycle:
             pds_host='nodispersion.com',
             observed_count=50,
             distinct_accounts=50,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1'],
@@ -488,6 +507,7 @@ class TestRunCycle:
             pds_host='anomalous.com',
             observed_count=200,
             distinct_accounts=200,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did1', 'did2'],
@@ -500,6 +520,7 @@ class TestRunCycle:
             pds_host='normal.com',
             observed_count=52,
             distinct_accounts=52,
+            rolling_median=50.0,
             rolling_mean=50.0,
             baseline_days_available=7,
             sample_dids=['did3', 'did4'],

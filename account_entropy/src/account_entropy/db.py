@@ -28,11 +28,15 @@ class ScoredResult:
     post_count: int
     hourly_entropy: float
     interval_entropy: float
+    hourly_entropy_norm: float
+    interval_entropy_norm: float
     mean_interval_seconds: float
     stddev_interval_seconds: float
+    interval_cv: float
     is_bot_like: int
     hourly_flag: int
     interval_flag: int
+    cv_flag: int
     sample_rkeys: list[str]
 
 
@@ -66,10 +70,22 @@ class AccountEntropyDb:
 
     def insert_results(self, table: str, results: Sequence[ScoredResult]) -> None:
         column_names = [
-            'run_timestamp', 'user_id', 'window_start', 'window_end',
-            'post_count', 'hourly_entropy', 'interval_entropy',
-            'mean_interval_seconds', 'stddev_interval_seconds',
-            'is_bot_like', 'hourly_flag', 'interval_flag',
+            'run_timestamp',
+            'user_id',
+            'window_start',
+            'window_end',
+            'post_count',
+            'hourly_entropy',
+            'interval_entropy',
+            'hourly_entropy_norm',
+            'interval_entropy_norm',
+            'mean_interval_seconds',
+            'stddev_interval_seconds',
+            'interval_cv',
+            'is_bot_like',
+            'hourly_flag',
+            'interval_flag',
+            'cv_flag',
             'sample_rkeys',
         ]
         data = [
@@ -81,11 +97,15 @@ class AccountEntropyDb:
                 r.post_count,
                 r.hourly_entropy,
                 r.interval_entropy,
+                r.hourly_entropy_norm,
+                r.interval_entropy_norm,
                 r.mean_interval_seconds,
                 r.stddev_interval_seconds,
+                r.interval_cv,
                 r.is_bot_like,
                 r.hourly_flag,
                 r.interval_flag,
+                r.cv_flag,
                 r.sample_rkeys,
             ]
             for r in results

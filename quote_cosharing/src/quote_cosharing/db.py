@@ -47,7 +47,8 @@ class QuoteCosharingDb:
                     account_a=row[1],
                     account_b=row[2],
                     weight=int(row[3]),
-                    shared_uris=list(row[4]) if row[4] else [],
+                    newman_weight=float(row[4]),
+                    shared_uris=list(row[5]) if row[5] else [],
                 )
             )
         return rows

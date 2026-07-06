@@ -10,8 +10,9 @@ def base_analysis_config() -> AnalysisConfig:
         interval_seconds=3600,
         window_days=7,
         min_posts=10,
-        hourly_entropy_threshold=3.9,
-        interval_entropy_threshold=1.5,
+        hourly_entropy_norm_threshold=0.85,
+        interval_entropy_norm_threshold=0.53,
+        cv_threshold=0.5,
         interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
         source_table='osprey_execution_results',
         output_table='account_entropy_results',
@@ -66,8 +67,9 @@ class TestAnalysisConfig:
         monkeypatch.delenv('ACCOUNT_ENTROPY_INTERVAL_SECONDS', raising=False)
         monkeypatch.delenv('ACCOUNT_ENTROPY_WINDOW_DAYS', raising=False)
         monkeypatch.delenv('ACCOUNT_ENTROPY_MIN_POSTS', raising=False)
-        monkeypatch.delenv('ACCOUNT_ENTROPY_HOURLY_ENTROPY_THRESHOLD', raising=False)
-        monkeypatch.delenv('ACCOUNT_ENTROPY_INTERVAL_ENTROPY_THRESHOLD', raising=False)
+        monkeypatch.delenv('ACCOUNT_ENTROPY_HOURLY_NORM_THRESHOLD', raising=False)
+        monkeypatch.delenv('ACCOUNT_ENTROPY_INTERVAL_NORM_THRESHOLD', raising=False)
+        monkeypatch.delenv('ACCOUNT_ENTROPY_CV_THRESHOLD', raising=False)
         monkeypatch.delenv('ACCOUNT_ENTROPY_INTERVAL_BIN_EDGES', raising=False)
         monkeypatch.delenv('ACCOUNT_ENTROPY_SOURCE_TABLE', raising=False)
         monkeypatch.delenv('ACCOUNT_ENTROPY_OUTPUT_TABLE', raising=False)
@@ -77,8 +79,9 @@ class TestAnalysisConfig:
         assert config.interval_seconds == 3600
         assert config.window_days == 7
         assert config.min_posts == 10
-        assert config.hourly_entropy_threshold == 3.9
-        assert config.interval_entropy_threshold == 1.5
+        assert config.hourly_entropy_norm_threshold == 0.85
+        assert config.interval_entropy_norm_threshold == 0.53
+        assert config.cv_threshold == 0.5
         assert config.interval_bin_edges == (60, 300, 900, 3600, 14400, 86400)
         assert config.source_table == 'osprey_execution_results'
         assert config.output_table == 'account_entropy_results'
@@ -87,8 +90,9 @@ class TestAnalysisConfig:
         monkeypatch.setenv('ACCOUNT_ENTROPY_INTERVAL_SECONDS', '1800')
         monkeypatch.setenv('ACCOUNT_ENTROPY_WINDOW_DAYS', '14')
         monkeypatch.setenv('ACCOUNT_ENTROPY_MIN_POSTS', '20')
-        monkeypatch.setenv('ACCOUNT_ENTROPY_HOURLY_ENTROPY_THRESHOLD', '4.5')
-        monkeypatch.setenv('ACCOUNT_ENTROPY_INTERVAL_ENTROPY_THRESHOLD', '2.0')
+        monkeypatch.setenv('ACCOUNT_ENTROPY_HOURLY_NORM_THRESHOLD', '0.9')
+        monkeypatch.setenv('ACCOUNT_ENTROPY_INTERVAL_NORM_THRESHOLD', '0.4')
+        monkeypatch.setenv('ACCOUNT_ENTROPY_CV_THRESHOLD', '0.3')
         monkeypatch.setenv('ACCOUNT_ENTROPY_INTERVAL_BIN_EDGES', '30,120,600,3600')
         monkeypatch.setenv('ACCOUNT_ENTROPY_SOURCE_TABLE', 'custom_results')
         monkeypatch.setenv('ACCOUNT_ENTROPY_OUTPUT_TABLE', 'custom_entropy')
@@ -98,8 +102,9 @@ class TestAnalysisConfig:
         assert config.interval_seconds == 1800
         assert config.window_days == 14
         assert config.min_posts == 20
-        assert config.hourly_entropy_threshold == 4.5
-        assert config.interval_entropy_threshold == 2.0
+        assert config.hourly_entropy_norm_threshold == 0.9
+        assert config.interval_entropy_norm_threshold == 0.4
+        assert config.cv_threshold == 0.3
         assert config.interval_bin_edges == (30, 120, 600, 3600)
         assert config.source_table == 'custom_results'
         assert config.output_table == 'custom_entropy'
@@ -146,8 +151,9 @@ class TestAnalysisConfig:
             interval_seconds=3600,
             window_days=7,
             min_posts=10,
-            hourly_entropy_threshold=3.9,
-            interval_entropy_threshold=1.5,
+            hourly_entropy_norm_threshold=0.85,
+            interval_entropy_norm_threshold=0.53,
+            cv_threshold=0.5,
             interval_bin_edges=(60, 300, 900),
             source_table='osprey_execution_results',
             output_table='account_entropy_results',
@@ -186,8 +192,9 @@ class TestAppConfig:
             interval_seconds=3600,
             window_days=7,
             min_posts=10,
-            hourly_entropy_threshold=3.9,
-            interval_entropy_threshold=1.5,
+            hourly_entropy_norm_threshold=0.85,
+            interval_entropy_norm_threshold=0.53,
+            cv_threshold=0.5,
             interval_bin_edges=(60, 300, 900, 3600, 14400, 86400),
             source_table='osprey_execution_results',
             output_table='account_entropy_results',

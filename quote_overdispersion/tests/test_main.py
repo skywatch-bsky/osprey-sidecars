@@ -11,6 +11,45 @@ from quote_overdispersion.db import AggregatedRow, ScoredResult
 from quote_overdispersion.main import run_cycle
 
 
+def make_aggregated_row(
+    quoted_uri: str,
+    bucket_start: datetime,
+    total_shares: int = 100,
+    unique_sharers: int = 20,
+    sharer_density: float = 0.2,
+    rolling_volume_median: float | None = 50.0,
+    rolling_volume_mean: float | None = 52.0,
+    rolling_volume_variance: float | None = 60.0,
+    rolling_density_mean: float | None = 0.1,
+    rolling_density_variance: float | None = 0.02,
+    baseline_days_available: int = 7,
+    sample_dids: list[str] | None = None,
+    population_volume_median: float | None = None,
+    population_volume_dispersion: float | None = None,
+    population_density_median: float | None = None,
+    population_density_variance: float | None = None,
+) -> AggregatedRow:
+    """Factory function to create AggregatedRow with sensible defaults."""
+    return AggregatedRow(
+        quoted_uri=quoted_uri,
+        bucket_start=bucket_start,
+        total_shares=total_shares,
+        unique_sharers=unique_sharers,
+        sharer_density=sharer_density,
+        rolling_volume_median=rolling_volume_median,
+        rolling_volume_mean=rolling_volume_mean,
+        rolling_volume_variance=rolling_volume_variance,
+        rolling_density_mean=rolling_density_mean,
+        rolling_density_variance=rolling_density_variance,
+        baseline_days_available=baseline_days_available,
+        sample_dids=sample_dids or ['did1'],
+        population_volume_median=population_volume_median,
+        population_volume_dispersion=population_volume_dispersion,
+        population_density_median=population_density_median,
+        population_density_variance=population_density_variance,
+    )
+
+
 class FakeDb:
     """In-memory stub for database layer, captures inserted results."""
 
@@ -72,18 +111,10 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        row = AggregatedRow(
+        row = make_aggregated_row(
             quoted_uri='at://did:plc:test123/app.bsky.feed.post/abc',
             bucket_start=bucket,
-            total_shares=100,
-            unique_sharers=20,
-            sharer_density=0.2,
-            rolling_volume_mean=50.0,
-            rolling_density_mean=0.1,
-            baseline_days_available=7,
             sample_dids=['did1', 'did2', 'did3'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [row]
@@ -104,18 +135,9 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        row = AggregatedRow(
+        row = make_aggregated_row(
             quoted_uri='malformed-uri',
             bucket_start=bucket,
-            total_shares=100,
-            unique_sharers=20,
-            sharer_density=0.2,
-            rolling_volume_mean=50.0,
-            rolling_density_mean=0.1,
-            baseline_days_available=7,
-            sample_dids=['did1'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [row]
@@ -137,32 +159,32 @@ class TestRunCycle:
         bucket_daily = datetime(2026, 3, 20, 0, 0, 0)
         bucket_hourly = datetime(2026, 3, 20, 12, 0, 0)
 
-        daily_row = AggregatedRow(
+        daily_row = make_aggregated_row(
             quoted_uri='at://did:plc:daily/app.bsky.feed.post/post1',
             bucket_start=bucket_daily,
             total_shares=50,
             unique_sharers=10,
             sharer_density=0.2,
-            rolling_volume_mean=25.0,
+            rolling_volume_median=25.0,
+            rolling_volume_mean=26.0,
+            rolling_volume_variance=30.0,
             rolling_density_mean=0.15,
-            baseline_days_available=7,
-            sample_dids=['did1'],
-            population_volume_median=None,
-            population_density_median=None,
+            rolling_density_variance=0.015,
         )
 
-        hourly_row = AggregatedRow(
+        hourly_row = make_aggregated_row(
             quoted_uri='at://did:plc:hourly/app.bsky.feed.post/post2',
             bucket_start=bucket_hourly,
             total_shares=5,
             unique_sharers=3,
             sharer_density=0.6,
-            rolling_volume_mean=2.0,
+            rolling_volume_median=2.0,
+            rolling_volume_mean=2.1,
+            rolling_volume_variance=3.0,
             rolling_density_mean=0.5,
+            rolling_density_variance=0.05,
             baseline_days_available=7,
             sample_dids=['did2'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [daily_row]
@@ -187,18 +209,19 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        daily_row = AggregatedRow(
+        daily_row = make_aggregated_row(
             quoted_uri='at://did:plc:daily/app.bsky.feed.post/post1',
             bucket_start=bucket,
             total_shares=50,
             unique_sharers=10,
             sharer_density=0.2,
-            rolling_volume_mean=25.0,
+            rolling_volume_median=25.0,
+            rolling_volume_mean=26.0,
+            rolling_volume_variance=30.0,
             rolling_density_mean=0.15,
+            rolling_density_variance=0.015,
             baseline_days_available=7,
             sample_dids=['did1'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [daily_row]
@@ -219,33 +242,35 @@ class TestRunCycle:
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
         # High shares -> likely anomaly
-        anomalous_row = AggregatedRow(
+        anomalous_row = make_aggregated_row(
             quoted_uri='at://did:plc:anom/app.bsky.feed.post/post1',
             bucket_start=bucket,
             total_shares=200,
             unique_sharers=20,
             sharer_density=0.1,
-            rolling_volume_mean=50.0,
+            rolling_volume_median=50.0,
+            rolling_volume_mean=52.0,
+            rolling_volume_variance=60.0,
             rolling_density_mean=0.05,
+            rolling_density_variance=0.01,
             baseline_days_available=7,
             sample_dids=['did1'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         # Low shares -> normal
-        normal_row = AggregatedRow(
+        normal_row = make_aggregated_row(
             quoted_uri='at://did:plc:normal/app.bsky.feed.post/post2',
             bucket_start=bucket,
             total_shares=52,
             unique_sharers=10,
             sharer_density=0.19,
-            rolling_volume_mean=50.0,
+            rolling_volume_median=50.0,
+            rolling_volume_mean=51.0,
+            rolling_volume_variance=55.0,
             rolling_density_mean=0.05,
+            rolling_density_variance=0.01,
             baseline_days_available=7,
             sample_dids=['did2'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [anomalous_row, normal_row]
@@ -270,18 +295,19 @@ class TestRunCycle:
         fake_db = FakeDb()
         bucket = datetime(2026, 3, 20, 0, 0, 0)
 
-        test_row = AggregatedRow(
+        test_row = make_aggregated_row(
             quoted_uri='at://did:plc:test/app.bsky.feed.post/post1',
             bucket_start=bucket,
             total_shares=200,
             unique_sharers=20,
             sharer_density=0.1,
-            rolling_volume_mean=50.0,
+            rolling_volume_median=50.0,
+            rolling_volume_mean=52.0,
+            rolling_volume_variance=60.0,
             rolling_density_mean=0.05,
+            rolling_density_variance=0.01,
             baseline_days_available=7,
             sample_dids=['did1'],
-            population_volume_median=None,
-            population_density_median=None,
         )
 
         fake_db.daily_rows = [test_row]

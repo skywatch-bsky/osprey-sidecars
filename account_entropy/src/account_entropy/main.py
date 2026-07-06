@@ -55,7 +55,10 @@ def main() -> None:
     config = AppConfig.from_env()
     logger.info(f'starting account-entropy detector (interval={config.analysis.interval_seconds}s)')
     logger.info(
-        f'window_days={config.analysis.window_days}, hourly_entropy_threshold={config.analysis.hourly_entropy_threshold}, interval_entropy_threshold={config.analysis.interval_entropy_threshold}'
+        f'window_days={config.analysis.window_days}, '
+        f'hourly_entropy_norm_threshold={config.analysis.hourly_entropy_norm_threshold}, '
+        f'interval_entropy_norm_threshold={config.analysis.interval_entropy_norm_threshold}, '
+        f'cv_threshold={config.analysis.cv_threshold}'
     )
 
     db = AccountEntropyDb(config.clickhouse)
