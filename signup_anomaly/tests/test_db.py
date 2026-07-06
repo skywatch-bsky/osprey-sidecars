@@ -1,9 +1,10 @@
 # pattern: Functional Core
 from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 
-from signup_anomaly.db import AggregatedRow, ScoredResult
+from signup_anomaly.db import AggregatedRow, ScoredResult, SignupAnomalyDb
 
 
 class TestAggregatedRow:
@@ -261,3 +262,85 @@ class TestScoredResult:
         assert result.rolling_variance == 0.75
         assert result.dispersion_index == 1.5
         assert result.q_value == 0.005
+
+
+class TestFetchAggregatedRows:
+    def test_fetch_mapping_maps_columns_in_correct_order(self) -> None:
+        """Verify that fetch_aggregated_rows maps tuple columns in exact SELECT order.
+
+        SELECT order from queries.py daily/hourly: pds_host, observed_count, distinct_accounts,
+        rolling_median, rolling_mean, rolling_variance, dispersion_index, baseline_days_available,
+        sample_dids, population_median_lambda, population_dispersion_index.
+        """
+        db = SignupAnomalyDb.__new__(SignupAnomalyDb)
+        db._client = MagicMock()
+
+        stub_row = (
+            'example.com',  # [0] pds_host
+            42,  # [1] observed_count
+            40,  # [2] distinct_accounts
+            3.2,  # [3] rolling_median
+            3.5,  # [4] rolling_mean
+            0.75,  # [5] rolling_variance
+            1.5,  # [6] dispersion_index
+            7,  # [7] baseline_days_available
+            ['did:plc:abc1', 'did:plc:abc2'],  # [8] sample_dids
+            2.1,  # [9] population_median_lambda
+            1.2,  # [10] population_dispersion_index
+        )
+
+        mock_result = MagicMock()
+        mock_result.result_rows = [stub_row]
+        db._client.query.return_value = mock_result
+
+        rows = db.fetch_aggregated_rows('SELECT ...')
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.pds_host == 'example.com'
+        assert row.observed_count == 42
+        assert row.distinct_accounts == 40
+        assert row.rolling_median == 3.2
+        assert row.rolling_mean == 3.5
+        assert row.rolling_variance == 0.75
+        assert row.dispersion_index == 1.5
+        assert row.baseline_days_available == 7
+        assert row.sample_dids == ['did:plc:abc1', 'did:plc:abc2']
+        assert row.population_median_lambda == 2.1
+        assert row.population_dispersion_index == 1.2
+
+    def test_fetch_mapping_handles_none_values(self) -> None:
+        """Verify that fetch correctly converts None values to None (not crashes on int(None))."""
+        db = SignupAnomalyDb.__new__(SignupAnomalyDb)
+        db._client = MagicMock()
+
+        stub_row = (
+            'example.com',  # pds_host
+            10,  # observed_count
+            10,  # distinct_accounts
+            None,  # rolling_median (None)
+            None,  # rolling_mean (None)
+            None,  # rolling_variance (None)
+            None,  # dispersion_index (None)
+            5,  # baseline_days_available
+            [],  # sample_dids (empty)
+            None,  # population_median_lambda (None)
+            None,  # population_dispersion_index (None)
+        )
+
+        mock_result = MagicMock()
+        mock_result.result_rows = [stub_row]
+        db._client.query.return_value = mock_result
+
+        rows = db.fetch_aggregated_rows('SELECT ...')
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.rolling_median is None
+        assert row.rolling_mean is None
+        assert row.rolling_variance is None
+        assert row.dispersion_index is None
+        assert row.population_median_lambda is None
+        assert row.population_dispersion_index is None
+        assert row.sample_dids == []
+        assert row.baseline_days_available == 5
