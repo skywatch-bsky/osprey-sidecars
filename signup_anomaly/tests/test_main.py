@@ -19,7 +19,7 @@ class FakeDb:
 
     def fetch_aggregated_rows(self, query: str) -> list[AggregatedRow]:
         """Returns pre-configured rows based on query content."""
-        if 'daily_counts' in query:
+        if 'raw_counts' in query and 'toDate' in query:
             return self.daily_rows
         else:
             return self.hourly_rows
