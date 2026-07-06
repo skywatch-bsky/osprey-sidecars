@@ -548,6 +548,55 @@ class TestClusterGraph:
         assert len(result.sample_dids) <= 10
         assert result.sample_dids == sorted(result.sample_dids)
 
+    def test_cluster_graph_leiden_uses_newman_weight(self, base_date: date) -> None:
+        """Test AC6.3: Leiden clusters on newman_weight, not raw weight.
+
+        4-vertex bridge test: A-B (weight=10, newman=5), C-D (weight=10, newman=5),
+        B-C bridge (weight=10, newman=0.001). With CPM on Newman weights and resolution=0.05,
+        the bridge density (0.001 < 0.05) cannot justify merging into one cluster.
+        On raw weights (all 10 > 0.05), it would yield one 4-node cluster.
+        """
+        pairs = [
+            # Cluster 1: A-B
+            PairRow(date=base_date, account_a='A', account_b='B', weight=10, newman_weight=5.0, shared_urls=['url1']),
+            # Cluster 2: C-D
+            PairRow(date=base_date, account_a='C', account_b='D', weight=10, newman_weight=5.0, shared_urls=['url2']),
+            # Thin bridge B-C with very low Newman weight
+            PairRow(
+                date=base_date, account_a='B', account_b='C', weight=10, newman_weight=0.001, shared_urls=['url_bridge']
+            ),
+        ]
+        graph = build_graph(pairs, min_edge_weight=1)
+        results = cluster_graph(graph, resolution=0.05, min_cluster_size=2)
+
+        # Should get exactly 2 clusters on Newman weights
+        assert len(results) == 2
+        members = [frozenset(r.members) for r in results]
+        # One cluster should contain A and B, the other C and D
+        assert frozenset(['A', 'B']) in members
+        assert frozenset(['C', 'D']) in members
+
+    def test_cluster_graph_total_weight_sums_raw_weight(self, base_date: date) -> None:
+        """Test: total_weight in cluster still sums raw 'weight', not newman_weight."""
+        pairs = [
+            PairRow(
+                date=base_date, account_a='did:0', account_b='did:1', weight=3, newman_weight=1.5, shared_urls=['url1']
+            ),
+            PairRow(
+                date=base_date, account_a='did:1', account_b='did:2', weight=2, newman_weight=1.0, shared_urls=['url2']
+            ),
+            PairRow(
+                date=base_date, account_a='did:0', account_b='did:2', weight=4, newman_weight=2.0, shared_urls=['url3']
+            ),
+        ]
+        graph = build_graph(pairs, min_edge_weight=1)
+        results = cluster_graph(graph, resolution=0.05, min_cluster_size=3)
+
+        assert len(results) == 1
+        result = results[0]
+        # total_weight should sum raw weights: 3 + 2 + 4 = 9
+        assert result.total_weight == 9
+
 
 class TestComputeTemporalMetrics:
     """Tests for temporal metric computation."""
