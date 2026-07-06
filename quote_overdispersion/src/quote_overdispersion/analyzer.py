@@ -79,22 +79,35 @@ def determine_variances(
 
     Returns (volume_variance, density_variance) for use in dispersion-aware tests.
 
-    Entity path: volume_variance = rolling_volume_variance (already MoM-fit);
-                 density_variance = rolling_density_variance (already scaled).
-    Population path: volume_variance = population_volume_dispersion * population_volume_median;
-                     density_variance = population_density_variance.
+    Entity source: phi = rolling_volume_variance / rolling_volume_mean;
+    if phi > 1, volume_variance = phi * rolling_volume_median, else None (Poisson fallback).
+    density_variance = rolling_density_variance (may be None → binomial fallback).
+
+    Population source: same logic using population_volume_dispersion and
+    population_volume_median, population_density_variance.
     """
     if baseline_source == 'entity':
-        return row.rolling_volume_variance, row.rolling_density_variance
-
-    if baseline_source == 'population':
         volume_variance = None
-        if row.population_volume_dispersion is not None and row.population_volume_median is not None:
-            volume_variance = row.population_volume_dispersion * row.population_volume_median
-
+        if (
+            row.rolling_volume_mean is not None
+            and row.rolling_volume_mean > 0
+            and row.rolling_volume_variance is not None
+        ):
+            phi = row.rolling_volume_variance / row.rolling_volume_mean
+            if phi > 1 and row.rolling_volume_median is not None:
+                volume_variance = phi * row.rolling_volume_median
+        return volume_variance, row.rolling_density_variance
+    else:  # population source
+        volume_variance = None
+        if (
+            row.population_volume_dispersion is not None
+            and row.population_volume_median is not None
+            and row.population_volume_median > 0
+        ):
+            phi = row.population_volume_dispersion
+            if phi > 1:
+                volume_variance = phi * row.population_volume_median
         return volume_variance, row.population_density_variance
-
-    return None, None
 
 
 def score_row(

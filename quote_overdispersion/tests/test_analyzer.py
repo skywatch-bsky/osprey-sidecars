@@ -189,7 +189,13 @@ class TestDetermineBaseline:
 
 
 class TestDetermineVariances:
-    def test_entity_baseline_returns_rolling_variances(self) -> None:
+    def test_entity_baseline_reconstructs_volume_variance_from_dispersion(self) -> None:
+        """AC4.2: volume variance = phi * median when phi > 1, else None.
+
+        Fixture: volume_variance=40.0, mean=32.0, median=30.0
+        → phi = 40/32 = 1.25 > 1
+        → volume_var = 1.25 * 30.0 = 37.5
+        """
         row = AggregatedRow(
             quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
             bucket_start=datetime(2024, 3, 20),
@@ -209,10 +215,45 @@ class TestDetermineVariances:
             population_density_variance=0.02,
         )
         volume_var, density_var = determine_variances(row, 'entity')
-        assert volume_var == 40.0
+        assert volume_var == pytest.approx(37.5, abs=1e-10)
         assert density_var == 0.05
 
-    def test_population_baseline_derives_variances(self) -> None:
+    def test_entity_baseline_phi_le_1_returns_none(self) -> None:
+        """AC4.2: volume variance = None when phi <= 1 (Poisson fallback).
+
+        Fixture: variance=30.0, mean=32.0
+        → phi = 30/32 = 0.9375 <= 1
+        → volume_var = None
+        """
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=30.0,
+            rolling_volume_mean=32.0,
+            rolling_volume_variance=30.0,
+            rolling_density_mean=0.25,
+            rolling_density_variance=0.05,
+            baseline_days_available=5,
+            sample_dids=['did1'],
+            population_volume_median=10.0,
+            population_volume_dispersion=1.5,
+            population_density_median=0.1,
+            population_density_variance=0.02,
+        )
+        volume_var, density_var = determine_variances(row, 'entity')
+        assert volume_var is None
+        assert density_var == 0.05
+
+    def test_population_baseline_derives_variances_phi_gt_1(self) -> None:
+        """AC4.2: volume variance = dispersion * median when dispersion > 1, else None.
+
+        Fixture: dispersion=2.0, median=10.0
+        → phi = 2.0 > 1
+        → volume_var = 2.0 * 10.0 = 20.0
+        """
         row = AggregatedRow(
             quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
             bucket_start=datetime(2024, 3, 20),
@@ -235,6 +276,35 @@ class TestDetermineVariances:
         assert volume_var == 20.0  # 2.0 * 10.0
         assert density_var == 0.03
 
+    def test_population_baseline_dispersion_le_1_returns_none(self) -> None:
+        """AC4.2: volume variance = None when dispersion <= 1 (Poisson fallback).
+
+        Fixture: dispersion=0.8, median=10.0
+        → phi = 0.8 <= 1
+        → volume_var = None
+        """
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=None,
+            rolling_volume_mean=None,
+            rolling_volume_variance=None,
+            rolling_density_mean=None,
+            rolling_density_variance=None,
+            baseline_days_available=2,
+            sample_dids=['did1'],
+            population_volume_median=10.0,
+            population_volume_dispersion=0.8,
+            population_density_median=0.1,
+            population_density_variance=0.03,
+        )
+        volume_var, density_var = determine_variances(row, 'population')
+        assert volume_var is None
+        assert density_var == 0.03
+
     def test_population_baseline_with_none_population_dispersion(self) -> None:
         row = AggregatedRow(
             quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
@@ -251,6 +321,30 @@ class TestDetermineVariances:
             sample_dids=['did1'],
             population_volume_median=10.0,
             population_volume_dispersion=None,
+            population_density_median=0.1,
+            population_density_variance=0.03,
+        )
+        volume_var, density_var = determine_variances(row, 'population')
+        assert volume_var is None
+        assert density_var == 0.03
+
+    def test_population_baseline_with_zero_median_returns_none(self) -> None:
+        """Important 1: gate on population_volume_median > 0."""
+        row = AggregatedRow(
+            quoted_uri='at://did:plc:abc/app.bsky.feed.post/xyz',
+            bucket_start=datetime(2024, 3, 20),
+            total_shares=100,
+            unique_sharers=20,
+            sharer_density=0.2,
+            rolling_volume_median=None,
+            rolling_volume_mean=None,
+            rolling_volume_variance=None,
+            rolling_density_mean=None,
+            rolling_density_variance=None,
+            baseline_days_available=2,
+            sample_dids=['did1'],
+            population_volume_median=0.0,
+            population_volume_dispersion=2.0,
             population_density_median=0.1,
             population_density_variance=0.03,
         )
