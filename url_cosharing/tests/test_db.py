@@ -286,6 +286,8 @@ class TestCosharingDb:
             'sample_dids',
             'sample_urls',
             'resolution_parameter',
+            'mean_edge_similarity',
+            'subgraph_density',
             'evolution_type',
             'predecessor_cluster_ids',
             'jaccard_score',
@@ -366,9 +368,11 @@ class TestCosharingDb:
         assert row_data[0] == date(2026, 3, 22)  # run_date
         assert row_data[1] == '2026-03-22-0001'  # cluster_id
         assert row_data[2] == 1  # member_count
-        assert row_data[11] == 'birth'  # evolution_type
-        assert row_data[12] == ()  # predecessor_cluster_ids
-        assert row_data[13] == 0.0  # jaccard_score
+        assert row_data[11] == 0.0  # mean_edge_similarity
+        assert row_data[12] == 0.0  # subgraph_density
+        assert row_data[13] == 'birth'  # evolution_type
+        assert row_data[14] == ()  # predecessor_cluster_ids
+        assert row_data[15] == 0.0  # jaccard_score
 
 
 class TestUrlShareRow:
@@ -471,3 +475,166 @@ class TestFetchUrlShares:
         rows = db.fetch_url_shares('SELECT * FROM url_shares')
 
         assert rows == []
+
+
+class TestRunMetadata:
+    def test_create_with_all_fields(self) -> None:
+        from url_cosharing.db import RunMetadata
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+        )
+        assert run.run_date == date(2026, 3, 22)
+        assert run.window_days == 7
+        assert run.accounts_raw == 100
+        assert run.accounts_eligible == 50
+        assert run.urls_eligible == 200
+        assert run.graph_edges == 150
+        assert run.edge_quantile == 0.75
+        assert run.centrality_quantile == 0.80
+        assert run.min_component_density == 0.5
+        assert run.knee_found is True
+        assert run.guardrail_triggered is False
+        assert run.flagged_accounts == 10
+        assert run.cluster_count == 3
+
+    def test_is_frozen(self) -> None:
+        from url_cosharing.db import RunMetadata
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+        )
+        with pytest.raises(AttributeError):
+            run.cluster_count = 5
+
+
+class TestInsertRun:
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_insert_run_sends_correct_columns(self, mock_get_client) -> None:
+        from url_cosharing.db import RunMetadata
+
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+        )
+
+        db.insert_run('url_cosharing_runs', run)
+
+        mock_client.insert.assert_called_once()
+        call_args = mock_client.insert.call_args
+
+        expected_columns = [
+            'run_date',
+            'window_days',
+            'accounts_raw',
+            'accounts_eligible',
+            'urls_eligible',
+            'graph_edges',
+            'edge_quantile',
+            'centrality_quantile',
+            'min_component_density',
+            'knee_found',
+            'guardrail_triggered',
+            'flagged_accounts',
+            'cluster_count',
+        ]
+        assert call_args[1]['column_names'] == expected_columns
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_insert_run_includes_data_row(self, mock_get_client) -> None:
+        from url_cosharing.db import RunMetadata
+
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+        )
+
+        db.insert_run('url_cosharing_runs', run)
+
+        call_args = mock_client.insert.call_args
+        data = call_args[1]['data']
+        assert len(data) == 1
+        row_data = data[0]
+        assert row_data[0] == date(2026, 3, 22)  # run_date
+        assert row_data[1] == 7  # window_days
+        assert row_data[2] == 100  # accounts_raw
+        assert row_data[3] == 50  # accounts_eligible
+        assert row_data[4] == 200  # urls_eligible
+        assert row_data[5] == 150  # graph_edges
+        assert row_data[6] == 0.75  # edge_quantile
+        assert row_data[7] == 0.80  # centrality_quantile
+        assert row_data[8] == 0.5  # min_component_density
+        assert row_data[9] is True  # knee_found
+        assert row_data[10] is False  # guardrail_triggered
+        assert row_data[11] == 10  # flagged_accounts
+        assert row_data[12] == 3  # cluster_count

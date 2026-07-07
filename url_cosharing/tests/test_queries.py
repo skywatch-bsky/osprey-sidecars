@@ -303,6 +303,8 @@ class TestInsertClustersQuery:
         assert 'sample_dids' in query
         assert 'sample_urls' in query
         assert 'resolution_parameter' in query
+        assert 'mean_edge_similarity' in query
+        assert 'subgraph_density' in query
         assert 'evolution_type' in query
         assert 'predecessor_cluster_ids' in query
         assert 'jaccard_score' in query
@@ -310,6 +312,12 @@ class TestInsertClustersQuery:
     def test_includes_values_placeholder(self, base_config: AnalysisConfig) -> None:
         query = insert_clusters_query(base_config)
         assert 'VALUES' in query
+
+    def test_includes_16_placeholders(self, base_config: AnalysisConfig) -> None:
+        """insert_clusters_query should have 16 placeholders for 16 columns"""
+        query = insert_clusters_query(base_config)
+        placeholder_count = query.count('?')
+        assert placeholder_count == 16
 
     def test_with_custom_table_name(self) -> None:
         config = AnalysisConfig(

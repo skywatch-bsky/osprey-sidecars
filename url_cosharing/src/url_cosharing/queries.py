@@ -102,11 +102,13 @@ def insert_clusters_query(config: AnalysisConfig) -> str:
             sample_dids,
             sample_urls,
             resolution_parameter,
+            mean_edge_similarity,
+            subgraph_density,
             evolution_type,
             predecessor_cluster_ids,
             jaccard_score
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
 

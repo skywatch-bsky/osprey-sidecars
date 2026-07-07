@@ -25,6 +25,23 @@ class MemberTimestamp:
     ts: datetime
 
 
+@dataclass(frozen=True)
+class RunMetadata:
+    run_date: date
+    window_days: int
+    accounts_raw: int
+    accounts_eligible: int
+    urls_eligible: int
+    graph_edges: int
+    edge_quantile: float
+    centrality_quantile: float
+    min_component_density: float
+    knee_found: bool
+    guardrail_triggered: bool
+    flagged_accounts: int
+    cluster_count: int
+
+
 class CosharingDb:
     def __init__(self, config: ClickHouseConfig):
         self._client = clickhouse_connect.get_client(
@@ -129,6 +146,8 @@ class CosharingDb:
             'sample_dids',
             'sample_urls',
             'resolution_parameter',
+            'mean_edge_similarity',
+            'subgraph_density',
             'evolution_type',
             'predecessor_cluster_ids',
             'jaccard_score',
@@ -146,6 +165,8 @@ class CosharingDb:
                 cluster.sample_dids,
                 cluster.sample_urls,
                 cluster.resolution_parameter,
+                cluster.mean_edge_similarity,
+                cluster.subgraph_density,
                 event.evolution_type,
                 event.predecessor_cluster_ids,
                 event.jaccard_score,
@@ -157,6 +178,39 @@ class CosharingDb:
     def insert_membership(self, table: str, membership: Sequence[tuple[date, str, str]]) -> None:
         column_names = ['run_date', 'cluster_id', 'did']
         data = [[m[0], m[1], m[2]] for m in membership]
+        self._client.insert(table=table, data=data, column_names=column_names)
+
+    def insert_run(self, table: str, run: RunMetadata) -> None:
+        column_names = [
+            'run_date',
+            'window_days',
+            'accounts_raw',
+            'accounts_eligible',
+            'urls_eligible',
+            'graph_edges',
+            'edge_quantile',
+            'centrality_quantile',
+            'min_component_density',
+            'knee_found',
+            'guardrail_triggered',
+            'flagged_accounts',
+            'cluster_count',
+        ]
+        data = [[
+            run.run_date,
+            run.window_days,
+            run.accounts_raw,
+            run.accounts_eligible,
+            run.urls_eligible,
+            run.graph_edges,
+            run.edge_quantile,
+            run.centrality_quantile,
+            run.min_component_density,
+            run.knee_found,
+            run.guardrail_triggered,
+            run.flagged_accounts,
+            run.cluster_count,
+        ]]
         self._client.insert(table=table, data=data, column_names=column_names)
 
     def close(self) -> None:
