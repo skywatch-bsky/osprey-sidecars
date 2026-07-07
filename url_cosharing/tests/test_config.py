@@ -14,6 +14,16 @@ def base_analysis_config() -> AnalysisConfig:
         min_cosharers=3,
         jaccard_threshold=0.5,
         evolution_window_days=7,
+        window_days=7,
+        min_unique_urls=10,
+        min_url_sharers=5,
+        max_url_df_pctl=0.90,
+        edge_epsilon=0.05,
+        edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+        centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+        density_floor=0.5,
+        max_flagged_fraction=0.02,
+        runs_table='url_cosharing_runs',
         pairs_table='url_cosharing_pairs',
         clusters_table='url_cosharing_clusters',
         membership_table='url_cosharing_membership',
@@ -77,6 +87,16 @@ class TestAnalysisConfig:
         monkeypatch.delenv('URL_COSHARING_CLUSTERS_TABLE', raising=False)
         monkeypatch.delenv('URL_COSHARING_MEMBERSHIP_TABLE', raising=False)
         monkeypatch.delenv('URL_COSHARING_SOURCE_TABLE', raising=False)
+        monkeypatch.delenv('URL_COSHARING_WINDOW_DAYS', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MIN_UNIQUE_URLS', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MIN_URL_SHARERS', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MAX_URL_DF_PCTL', raising=False)
+        monkeypatch.delenv('URL_COSHARING_EDGE_EPSILON', raising=False)
+        monkeypatch.delenv('URL_COSHARING_EDGE_QUANTILE_GRID', raising=False)
+        monkeypatch.delenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', raising=False)
+        monkeypatch.delenv('URL_COSHARING_DENSITY_FLOOR', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MAX_FLAGGED_FRACTION', raising=False)
+        monkeypatch.delenv('URL_COSHARING_RUNS_TABLE', raising=False)
 
         config = AnalysisConfig.from_env()
 
@@ -91,6 +111,16 @@ class TestAnalysisConfig:
         assert config.clusters_table == 'url_cosharing_clusters'
         assert config.membership_table == 'url_cosharing_membership'
         assert config.source_table == 'osprey_execution_results'
+        assert config.window_days == 7
+        assert config.min_unique_urls == 10
+        assert config.min_url_sharers == 5
+        assert config.max_url_df_pctl == 0.90
+        assert config.edge_epsilon == 0.05
+        assert config.edge_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
+        assert config.centrality_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
+        assert config.density_floor == 0.5
+        assert config.max_flagged_fraction == 0.02
+        assert config.runs_table == 'url_cosharing_runs'
 
     def test_from_env_overrides(self, monkeypatch) -> None:
         monkeypatch.setenv('URL_COSHARING_INTERVAL_SECONDS', '1800')
@@ -104,6 +134,16 @@ class TestAnalysisConfig:
         monkeypatch.setenv('URL_COSHARING_CLUSTERS_TABLE', 'custom_clusters')
         monkeypatch.setenv('URL_COSHARING_MEMBERSHIP_TABLE', 'custom_membership')
         monkeypatch.setenv('URL_COSHARING_SOURCE_TABLE', 'custom_source')
+        monkeypatch.setenv('URL_COSHARING_WINDOW_DAYS', '14')
+        monkeypatch.setenv('URL_COSHARING_MIN_UNIQUE_URLS', '20')
+        monkeypatch.setenv('URL_COSHARING_MIN_URL_SHARERS', '10')
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '0.75')
+        monkeypatch.setenv('URL_COSHARING_EDGE_EPSILON', '0.10')
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.6,0.8')
+        monkeypatch.setenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', '0.5,0.75,0.95')
+        monkeypatch.setenv('URL_COSHARING_DENSITY_FLOOR', '0.3')
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.05')
+        monkeypatch.setenv('URL_COSHARING_RUNS_TABLE', 'custom_runs')
 
         config = AnalysisConfig.from_env()
 
@@ -118,6 +158,16 @@ class TestAnalysisConfig:
         assert config.clusters_table == 'custom_clusters'
         assert config.membership_table == 'custom_membership'
         assert config.source_table == 'custom_source'
+        assert config.window_days == 14
+        assert config.min_unique_urls == 20
+        assert config.min_url_sharers == 10
+        assert config.max_url_df_pctl == 0.75
+        assert config.edge_epsilon == 0.10
+        assert config.edge_quantile_grid == (0.6, 0.8)
+        assert config.centrality_quantile_grid == (0.5, 0.75, 0.95)
+        assert config.density_floor == 0.3
+        assert config.max_flagged_fraction == 0.05
+        assert config.runs_table == 'custom_runs'
 
     def test_interval_seconds_parsed_as_int(self, monkeypatch) -> None:
         monkeypatch.setenv('URL_COSHARING_INTERVAL_SECONDS', '1200')
@@ -183,6 +233,16 @@ class TestAnalysisConfig:
             min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
             pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
@@ -192,6 +252,112 @@ class TestAnalysisConfig:
         assert config.interval_seconds == 3600
         assert config.resolution == 0.05
         assert config.min_edge_weight == 2
+        assert config.window_days == 7
+        assert config.edge_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
+
+    def test_edge_quantile_grid_with_whitespace(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', ' 0.5, 0.9 ')
+
+        config = AnalysisConfig.from_env()
+
+        assert config.edge_quantile_grid == (0.5, 0.9)
+
+    def test_edge_quantile_grid_empty_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '')
+
+        with pytest.raises(ValueError, match='quantile grid must contain at least one value'):
+            AnalysisConfig.from_env()
+
+    def test_edge_quantile_grid_non_numeric_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.5,abc')
+
+        with pytest.raises(ValueError):
+            AnalysisConfig.from_env()
+
+    def test_edge_quantile_grid_value_equals_one_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.5,1.0')
+
+        with pytest.raises(ValueError, match='quantile grid values must be in'):
+            AnalysisConfig.from_env()
+
+    def test_edge_quantile_grid_value_less_than_zero_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '-0.1,0.5')
+
+        with pytest.raises(ValueError, match='quantile grid values must be in'):
+            AnalysisConfig.from_env()
+
+    def test_edge_quantile_grid_non_increasing_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.9,0.5')
+
+        with pytest.raises(ValueError, match='quantile grid must be strictly increasing'):
+            AnalysisConfig.from_env()
+
+    def test_edge_quantile_grid_duplicate_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.5,0.5')
+
+        with pytest.raises(ValueError, match='quantile grid must be strictly increasing'):
+            AnalysisConfig.from_env()
+
+    def test_centrality_quantile_grid_with_whitespace(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', ' 0.5, 0.9 ')
+
+        config = AnalysisConfig.from_env()
+
+        assert config.centrality_quantile_grid == (0.5, 0.9)
+
+    def test_max_url_df_pctl_too_high_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '1.5')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_max_url_df_pctl_negative_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '-0.1')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_edge_epsilon_too_high_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_EPSILON', '1.5')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_edge_epsilon_negative_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_EDGE_EPSILON', '-0.1')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_density_floor_too_high_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_DENSITY_FLOOR', '1.5')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_density_floor_negative_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_DENSITY_FLOOR', '-0.1')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_max_flagged_fraction_too_high_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '1.5')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_max_flagged_fraction_negative_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '-0.1')
+
+        with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_runs_table_validates_name(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_RUNS_TABLE', 'invalid@table')
+
+        with pytest.raises(ValueError, match='invalid table name'):
+            AnalysisConfig.from_env()
 
 
 class TestAppConfig:
@@ -227,6 +393,16 @@ class TestAppConfig:
             min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
             pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
