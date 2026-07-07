@@ -33,6 +33,12 @@ def _validate_unit_interval(name: str, value: float) -> float:
     return value
 
 
+def _validate_positive_int(name: str, value: int) -> int:
+    if value < 1:
+        raise ValueError(f'{name} must be >= 1: {value!r}')
+    return value
+
+
 @dataclass(frozen=True)
 class ClickHouseConfig:
     host: str
@@ -72,6 +78,11 @@ class AnalysisConfig:
     clusters_table: str
     membership_table: str
     source_table: str
+    # Absolute survivor cap paired with max_flagged_fraction; the effective
+    # guardrail is min(fraction * eligible, accounts). Observed coordinated
+    # cores are roughly constant in absolute size (Cinus et al.: 25-764),
+    # so the fraction alone would make sensitivity track daily eligibility.
+    max_flagged_accounts: int = 750
 
     @classmethod
     def from_env(cls) -> AnalysisConfig:
@@ -111,7 +122,11 @@ class AnalysisConfig:
             ),
             max_flagged_fraction=_validate_unit_interval(
                 'URL_COSHARING_MAX_FLAGGED_FRACTION',
-                float(os.environ.get('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.02')),
+                float(os.environ.get('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.05')),
+            ),
+            max_flagged_accounts=_validate_positive_int(
+                'URL_COSHARING_MAX_FLAGGED_ACCOUNTS',
+                int(os.environ.get('URL_COSHARING_MAX_FLAGGED_ACCOUNTS', '750')),
             ),
             runs_table=_validate_table_name(os.environ.get('URL_COSHARING_RUNS_TABLE', 'url_cosharing_runs')),
             clusters_table=_validate_table_name(

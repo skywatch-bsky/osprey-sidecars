@@ -102,6 +102,7 @@ def run_cycle(db: CosharingDb, config: AppConfig, run_date: date | None = None) 
         analysis.centrality_quantile_grid,
         analysis.density_floor,
         analysis.max_flagged_fraction,
+        analysis.max_flagged_accounts,
         analysis.min_cluster_size,
         logger,
     )
@@ -200,7 +201,8 @@ def main() -> None:
     logger.info(
         f'window_days={config.analysis.window_days}, min_unique_urls={config.analysis.min_unique_urls}, '
         f'min_url_sharers={config.analysis.min_url_sharers}, density_floor={config.analysis.density_floor}, '
-        f'max_flagged_fraction={config.analysis.max_flagged_fraction}, resolution={config.analysis.resolution}, '
+        f'max_flagged_fraction={config.analysis.max_flagged_fraction}, '
+        f'max_flagged_accounts={config.analysis.max_flagged_accounts}, resolution={config.analysis.resolution}, '
         f'min_cluster_size={config.analysis.min_cluster_size}, jaccard_threshold={config.analysis.jaccard_threshold}'
     )
 

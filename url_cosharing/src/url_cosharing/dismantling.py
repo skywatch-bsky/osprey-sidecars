@@ -99,6 +99,7 @@ def dismantle(
     centrality_quantile_grid: tuple[float, ...],
     density_floor: float,
     max_flagged_fraction: float,
+    max_flagged_accounts: int,
     min_cluster_size: int,
     logger: logging.Logger | None = None,
 ) -> DismantlingResult:
@@ -109,6 +110,14 @@ def dismantle(
     Eigenvector centrality is computed independently per connected component, each
     scaled to max=1.0, so disconnected graphs are thresholded deterministically and
     equally dense components outside the max-eigenvalue component are not dropped.
+
+    The size guardrail is an operational bound of this implementation, not part
+    of the paper's method: a candidate cell is rejected when its survivors
+    exceed min(max_flagged_fraction * nodes, max_flagged_accounts). The
+    absolute cap reflects that observed coordinated cores are roughly constant
+    in absolute size (Cinus et al. observed cores of 25-764 accounts across
+    networks of 6k-178k), while the fraction guards degenerate days when the
+    eligible graph itself is tiny and flagging most of it would be implausible.
     """
     if graph.vcount() == 0 or graph.ecount() == 0:
         return _empty_result(surface=(), guardrail_triggered=False)
@@ -158,7 +167,7 @@ def dismantle(
     )
 
     guardrail_triggered = False
-    max_flagged = max_flagged_fraction * graph.vcount()
+    max_flagged = min(max_flagged_fraction * graph.vcount(), float(max_flagged_accounts))
     for jump, cell_density, i, j in candidates:
         if cell_density < density_floor:
             continue

@@ -90,6 +90,7 @@ class TestAnalysisConfig:
         monkeypatch.delenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', raising=False)
         monkeypatch.delenv('URL_COSHARING_DENSITY_FLOOR', raising=False)
         monkeypatch.delenv('URL_COSHARING_MAX_FLAGGED_FRACTION', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MAX_FLAGGED_ACCOUNTS', raising=False)
         monkeypatch.delenv('URL_COSHARING_RUNS_TABLE', raising=False)
 
         config = AnalysisConfig.from_env()
@@ -110,7 +111,8 @@ class TestAnalysisConfig:
         assert config.edge_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
         assert config.centrality_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
         assert config.density_floor == 0.5
-        assert config.max_flagged_fraction == 0.02
+        assert config.max_flagged_fraction == 0.05
+        assert config.max_flagged_accounts == 750
         assert config.runs_table == 'url_cosharing_runs'
 
     def test_from_env_overrides(self, monkeypatch) -> None:
@@ -130,7 +132,8 @@ class TestAnalysisConfig:
         monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.6,0.8')
         monkeypatch.setenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', '0.5,0.75,0.95')
         monkeypatch.setenv('URL_COSHARING_DENSITY_FLOOR', '0.3')
-        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.05')
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.10')
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_ACCOUNTS', '400')
         monkeypatch.setenv('URL_COSHARING_RUNS_TABLE', 'custom_runs')
 
         config = AnalysisConfig.from_env()
@@ -151,7 +154,8 @@ class TestAnalysisConfig:
         assert config.edge_quantile_grid == (0.6, 0.8)
         assert config.centrality_quantile_grid == (0.5, 0.75, 0.95)
         assert config.density_floor == 0.3
-        assert config.max_flagged_fraction == 0.05
+        assert config.max_flagged_fraction == 0.10
+        assert config.max_flagged_accounts == 400
         assert config.runs_table == 'custom_runs'
 
     def test_interval_seconds_parsed_as_int(self, monkeypatch) -> None:
@@ -331,6 +335,12 @@ class TestAnalysisConfig:
         monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_FRACTION', '-0.1')
 
         with pytest.raises(ValueError, match='must be in'):
+            AnalysisConfig.from_env()
+
+    def test_max_flagged_accounts_zero_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_FLAGGED_ACCOUNTS', '0')
+
+        with pytest.raises(ValueError, match='must be >= 1'):
             AnalysisConfig.from_env()
 
     def test_runs_table_validates_name(self, monkeypatch) -> None:

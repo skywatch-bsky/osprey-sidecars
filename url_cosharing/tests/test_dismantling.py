@@ -115,6 +115,7 @@ class TestDismantleSurface:
             centrality_quantile_grid=centrality_grid,
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -133,6 +134,7 @@ class TestDismantleSurface:
             centrality_quantile_grid=centrality_grid,
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -172,6 +174,7 @@ class TestDismantleSurface:
             centrality_quantile_grid=(0.6,),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -190,6 +193,7 @@ class TestDismantleSurface:
             centrality_quantile_grid=(0.3, 0.6, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -205,6 +209,7 @@ class TestDismantleSurface:
             centrality_quantile_grid=(0.5,),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -223,6 +228,7 @@ class TestDismantleKnee:
             centrality_quantile_grid=tuple(np.linspace(0.5, 0.99, 7)),
             density_floor=0.5,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=3,
         )
 
@@ -241,6 +247,7 @@ class TestDismantleKnee:
             centrality_quantile_grid=(0.5, 0.7, 0.9),
             density_floor=density_floor,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=2,
         )
 
@@ -258,6 +265,7 @@ class TestDismantleKnee:
             centrality_quantile_grid=centrality_grid,
             density_floor=0.0,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=2,
         )
 
@@ -275,6 +283,7 @@ class TestDismantleKnee:
             centrality_quantile_grid=(0.3, 0.6, 0.9),
             density_floor=0.5,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=2,
         )
 
@@ -284,6 +293,7 @@ class TestDismantleKnee:
             centrality_quantile_grid=(0.3, 0.6, 0.9),
             density_floor=0.5,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=2,
         )
 
@@ -315,6 +325,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=(0.1, 0.5, 0.9),
             density_floor=0.9,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -334,6 +345,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=(0.5,),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -352,6 +364,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=(0.5,),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -389,6 +402,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=(0.3, 0.6, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -398,6 +412,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=(0.3, 0.6, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -457,6 +472,7 @@ class TestDismantleNoTransition:
             centrality_quantile_grid=tuple(np.linspace(0.5, 0.99, 7)),
             density_floor=0.5,
             max_flagged_fraction=0.5,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=3,
         )
 
@@ -482,6 +498,7 @@ class TestDismantleGuardrails:
             centrality_quantile_grid=(0.5, 0.7, 0.9),
             density_floor=0.0,
             max_flagged_fraction=0.05,  # ~1.9 nodes cap on 38 total
+            max_flagged_accounts=1_000_000,
             min_cluster_size=3,  # Requires at least 3 survivors; cap ≈ 1.9 means nothing fits
         )
 
@@ -491,6 +508,46 @@ class TestDismantleGuardrails:
         assert result.knee_found is False
         # core must be empty
         assert result.core.vcount() == 0
+
+    def test_max_flagged_accounts_rejects_best_candidate(self):
+        """Absolute cap binds even when the fractional cap would admit.
+
+        The guardrail is min(fraction * nodes, accounts): with fraction=1.0
+        (cap 38) and accounts=5, the 8-node planted core must be rejected.
+        """
+        graph = planted_core_graph()  # 38 vertices, 8-node dense core
+
+        result = dismantle(
+            graph,
+            edge_quantile_grid=(0.5, 0.7, 0.9),
+            centrality_quantile_grid=(0.5, 0.7, 0.9),
+            density_floor=0.0,
+            max_flagged_fraction=1.0,
+            max_flagged_accounts=5,
+            min_cluster_size=6,  # nothing can satisfy 6 <= survivors <= 5
+        )
+
+        assert result.guardrail_triggered is True
+        assert result.knee_found is False
+        assert result.core.vcount() == 0
+
+    def test_max_flagged_accounts_next_best_candidate(self):
+        """Absolute cap rejects the large plateau; the small plateau is accepted."""
+        graph = two_plateau_graph()
+
+        result = dismantle(
+            graph,
+            edge_quantile_grid=(0.2, 0.6, 0.92),
+            centrality_quantile_grid=(0.2, 0.7, 0.95),
+            density_floor=0.5,
+            max_flagged_fraction=1.0,  # fraction cap admits everything
+            max_flagged_accounts=6,  # absolute cap rejects the 7-survivor plateau
+            min_cluster_size=2,
+        )
+
+        assert result.guardrail_triggered is True
+        assert result.knee_found is True
+        assert result.core.vcount() <= 6
 
     def test_min_cluster_size_rejects_small_candidates(self):
         """Winning cell would leave 2 survivors with min_cluster_size=3 → rejected."""
@@ -506,6 +563,7 @@ class TestDismantleGuardrails:
             centrality_quantile_grid=(0.0, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=3,  # Requires at least 3 survivors
         )
 
@@ -532,6 +590,7 @@ class TestDismantleGuardrails:
             centrality_quantile_grid=(0.2, 0.7, 0.95),
             density_floor=0.5,
             max_flagged_fraction=0.30,  # cap ≈ 6 nodes
+            max_flagged_accounts=1_000_000,
             min_cluster_size=2,
         )
 
@@ -559,6 +618,7 @@ class TestDismantleFull:
             centrality_quantile_grid=centrality_grid,
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
         )
 
@@ -584,6 +644,7 @@ class TestDismantleFull:
             centrality_quantile_grid=(0.3, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
             logger=None,
         )
@@ -596,6 +657,7 @@ class TestDismantleFull:
             centrality_quantile_grid=(0.3, 0.9),
             density_floor=0.0,
             max_flagged_fraction=1.0,
+            max_flagged_accounts=1_000_000,
             min_cluster_size=1,
             logger=logger,
         )

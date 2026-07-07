@@ -532,7 +532,8 @@ ORDER BY run_date DESC;
 ```
 
 **Healthy ranges:**
-- `flagged_pct` should fall in the paper's observed 0.4–1.5% coordinated-account band. Investigate sustained values above ~2% (the `MAX_FLAGGED_FRACTION` default ceiling); frequent guardrail triggers indicate the dismantling surface wants to over-flag.
+- **Denominator caveat:** the paper's observed 0.4–1.5% coordinated-account band is relative to full dataset populations (6k–178k accounts), which corresponds to our `accounts_raw`, not `accounts_eligible`. `flagged_accounts / accounts_raw` in the 0.05–0.5% range is consistent with the paper; `flagged_pct` against `accounts_eligible` runs much higher (2–5%) because the ≥10-unique-URLs eligibility filter shrinks the denominator ~50×.
+- Absolute `flagged_accounts` should sit in the low hundreds (paper observed 25–764). Investigate sustained values near the `MAX_FLAGGED_ACCOUNTS` ceiling (default 750).
 - `knee_found = false` days are **correct behaviour**: they indicate no sharp phase transition in the density grid (no obvious knee = low confidence in a single optimal point). Alert only if paired with consecutive false runs and rising `accounts_eligible`.
 - Frequent `guardrail_triggered = true` paired with rising `flagged_pct` signals the knee rule is being overridden: inspect the density surface (see "Density-Surface Calibration" below) before loosening `MAX_FLAGGED_FRACTION`.
 
@@ -550,10 +551,11 @@ The dismantling surface is a grid of (edge_quantile, centrality_quantile) pairs,
 - Too low: the knee rule flags weak phase transitions, producing noise and raising `flagged_pct`.
 - Adjust incrementally (±0.05 steps) over 3–5 days and re-run Query 4 above to verify the effect.
 
-**Validating `MAX_FLAGGED_FRACTION`:**
-- Compare the guardrail ceiling against observed `flagged_pct` from Query 4.
-- If `flagged_pct` regularly approaches or exceeds the guardrail, the dismantling is over-flagging: lower `DENSITY_FLOOR` or `MAX_FLAGGED_FRACTION`.
-- If `flagged_pct` is consistently near 0.4–0.6%, the calibration is well-tuned.
+**Validating the guardrail (`MAX_FLAGGED_FRACTION` + `MAX_FLAGGED_ACCOUNTS`):**
+- The effective ceiling is `min(MAX_FLAGGED_FRACTION × accounts_eligible, MAX_FLAGGED_ACCOUNTS)`. The guardrail is an operational safety bound of this implementation — the paper prescribes no size cap; its threshold selection is the knee rule alone.
+- If `flagged_accounts` regularly hugs the ceiling AND post-hoc triage shows false positives, the dismantling is over-flagging: raise `DENSITY_FLOOR` (quality lever) before touching the caps.
+- If `guardrail_triggered = true` recurs on candidates with density ≥ 0.9 sitting just above the ceiling, the cap is clipping plausible cores: raise `MAX_FLAGGED_ACCOUNTS` in small steps and re-check precision.
+- Sanity band: `flagged_accounts / accounts_raw` between 0.05% and 0.5% is comfortably below the paper's observed 0.4–1.5%.
 
 ### CPM Resolution Re-Tuning Procedure
 
@@ -574,7 +576,8 @@ After applying the change, re-run Query 1 for 3 days. Verify evolution-type mix 
 ### Tuning Levers
 
 - **Density Floor (`URL_COSHARING_DENSITY_FLOOR`):** Default 0.5. Lower to flag more weak knees; raise to reduce noise. See "Density-Surface Calibration" above.
-- **Max Flagged Fraction (`URL_COSHARING_MAX_FLAGGED_FRACTION`):** Default 0.02 (2%). Guardrail ceiling; if knee rule wants to flag more, this threshold triggers. Raise to permit more accounts; lower to be conservative.
+- **Max Flagged Fraction (`URL_COSHARING_MAX_FLAGGED_FRACTION`):** Default 0.05 (5% of eligible accounts; raised from 0.02 on 2026-07-07). One half of the guardrail ceiling `min(fraction × eligible, max_flagged_accounts)`; its remaining job is degenerate days when the eligible graph itself is tiny and flagging most of it would be implausible.
+- **Max Flagged Accounts (`URL_COSHARING_MAX_FLAGGED_ACCOUNTS`):** Default 750. Absolute half of the guardrail ceiling, anchored to Cinus et al.'s observed core sizes (25–764 accounts across networks of 6k–178k). Observed coordinated cores are roughly constant in absolute size, so this bound — not the fraction — should govern normal days. Calibrate down only on precision evidence from post-hoc cluster triage (but fix false positives by raising `DENSITY_FLOOR` first); calibrate up only if runs repeatedly show `guardrail_triggered = true` on dense (≥0.9) candidates just above the cap.
 - **Edge Epsilon (`URL_COSHARING_EDGE_EPSILON`):** Default 0.05. Similarity threshold for including edges; lower includes more weak ties.
 - **Edge Quantile Grid (`URL_COSHARING_EDGE_QUANTILE_GRID`):** Default `0.50,0.60,0.70,0.80,0.90,0.95,0.99`. Coarser grid (fewer points) speeds computation; finer grid refines knee detection.
 - **Centrality Quantile Grid (`URL_COSHARING_CENTRALITY_QUANTILE_GRID`):** Default `0.50,0.60,0.70,0.80,0.90,0.95,0.99`. Controls dismantling grid density; same semantics as edge quantile grid.

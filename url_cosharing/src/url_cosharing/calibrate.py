@@ -62,6 +62,7 @@ def main() -> None:
             analysis.centrality_quantile_grid,
             analysis.density_floor,
             analysis.max_flagged_fraction,
+            analysis.max_flagged_accounts,
             analysis.min_cluster_size,
             logger,
         )
