@@ -24,11 +24,12 @@ class TestSqlFinalRowsNotRefiltered:
     """
 
     def test_account_with_single_surviving_url_is_kept(self):
-        # Raw window: a1 shares u1, u2, u3 (passes min_unique_urls=3); u1 has
-        # df=2 via a1 and a2 (passes min_url_sharers=2); u2, u3 have df=1
-        # (dropped); a2 has 1 unique URL (dropped). SQL's final output is a
-        # single row, a1/u1 — an activity re-check (1 URL < 3) or a df
-        # re-check (1 sharer < 2) would wrongly erase it.
+        # Pins the single-filtering-authority contract: whatever SQL emits,
+        # Python must not second-guess. Current SQL also excludes mono-URL
+        # survivors (eligible_shares HAVING uniqExact(url) >= 2), so this
+        # exact row can no longer occur in production — but the contract that
+        # similarity_network never re-derives eligibility from reduced counts
+        # is what this test protects.
         sql_final = [UrlShareRow(did='a1', url='u1', share_count=1)]
 
         result = similarity_network(sql_final, edge_epsilon=0.0)

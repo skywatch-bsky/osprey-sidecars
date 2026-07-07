@@ -49,14 +49,33 @@ def fetch_url_shares_query(config: AnalysisConfig, as_of: date) -> str:
             FROM url_shares
             GROUP BY did
             HAVING uniqExact(url) >= {config.min_unique_urls}
+        ),
+        eligible_shares AS (
+            SELECT
+                s.did,
+                s.url,
+                s.share_count
+            FROM url_shares s
+            WHERE s.url IN (SELECT url FROM eligible_urls)
+                AND s.did IN (SELECT did FROM active_accounts)
         )
         SELECT
-            s.did,
-            s.url,
-            s.share_count
-        FROM url_shares s
-        WHERE s.url IN (SELECT url FROM eligible_urls)
-            AND s.did IN (SELECT did FROM active_accounts)
+            did,
+            url,
+            share_count
+        FROM eligible_shares
+        WHERE did IN (
+            -- Cosine similarity over a 1-sparse TF-IDF vector is degenerate
+            -- (exactly 0 or 1 after normalization), so an account whose
+            -- eligible URL set collapsed to a single URL carries no gradable
+            -- co-sharing evidence and would form an artificial similarity-1.0
+            -- clique with every other sharer of that URL. The bound is the
+            -- mathematical minimum for cosine to grade, not a tuning knob.
+            SELECT did
+            FROM eligible_shares
+            GROUP BY did
+            HAVING uniqExact(url) >= 2
+        )
     """
 
 

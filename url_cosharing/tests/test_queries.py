@@ -329,6 +329,16 @@ class TestFetchUrlSharesQuery:
         assert isinstance(query, str)
         assert len(query) > 0
 
+    def test_mono_url_survivors_excluded(self, base_config: AnalysisConfig) -> None:
+        """Accounts whose eligible URL set collapsed to one URL are excluded:
+        cosine over a 1-sparse TF-IDF vector is degenerate (exactly 0 or 1),
+        so they form artificial similarity-1.0 cliques instead of evidence.
+        The >= 2 bound is fixed (mathematical minimum), not configurable.
+        """
+        query = fetch_url_shares_query(base_config, AS_OF)
+        assert 'eligible_shares' in query
+        assert 'HAVING uniqExact(url) >= 2' in query
+
     def test_reads_from_source_table(self, base_config: AnalysisConfig) -> None:
         """AC1.1: query reads from osprey_execution_results, not url_cosharing_pairs"""
         query = fetch_url_shares_query(base_config, AS_OF)
