@@ -8,18 +8,20 @@ import time
 from datetime import date, datetime
 
 from url_cosharing.analyzer import (
-    build_graph,
-    cluster_graph,
+    cluster_core,
     compute_evolution,
     compute_temporal_metrics,
 )
 from url_cosharing.config import AppConfig
-from url_cosharing.db import CosharingDb
+from url_cosharing.db import CosharingDb, MembershipRow, RunMetadata
+from url_cosharing.dismantling import dismantle
 from url_cosharing.queries import (
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
-    fetch_pairs_query,
+    fetch_raw_account_count_query,
+    fetch_url_shares_query,
 )
+from url_cosharing.similarity import similarity_network
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,30 +40,77 @@ def _sanitize_did(did: str) -> str:
     return re.sub(r'[^a-z0-9:.]', '', did)
 
 
+def _latest_previous_membership(history_rows: list[MembershipRow]) -> dict[str, frozenset[str]]:
+    """Build previous membership from each cluster's most recent snapshot only.
+
+    Unioning rows across the whole evolution window would accumulate departed
+    members, depressing Jaccard similarity against today's membership and
+    misclassifying normal churn as births, deaths, or splits.
+    """
+    latest_run_date: dict[str, date] = {}
+    for row in history_rows:
+        current = latest_run_date.get(row.cluster_id)
+        if current is None or row.run_date > current:
+            latest_run_date[row.cluster_id] = row.run_date
+
+    members: dict[str, set[str]] = {}
+    for row in history_rows:
+        if row.run_date == latest_run_date[row.cluster_id]:
+            members.setdefault(row.cluster_id, set()).add(row.did)
+
+    return {cluster_id: frozenset(dids) for cluster_id, dids in members.items()}
+
+
 def _handle_signal(signum: int, _frame: object) -> None:
     global _shutdown
     logger.info(f'received signal {signum}, shutting down after current cycle')
     _shutdown = True
 
 
-def run_cycle(db: CosharingDb, config: AppConfig) -> None:
-    run_date = date.today()
+def run_cycle(db: CosharingDb, config: AppConfig, run_date: date | None = None) -> None:
+    """Compute and persist one day's detection results.
 
-    logger.info('gathering pairs')
-    query = fetch_pairs_query(config.analysis)
-    pairs = db.fetch_pairs(query)
-    logger.info(f'fetched {len(pairs)} pairs')
+    run_date defaults to today (the daemon path). Passing a past date
+    recomputes that day: the detection window is the window_days days ending
+    the day before run_date, and existing rows for run_date are overwritten
+    via the idempotent delete-then-insert below.
+    """
+    if run_date is None:
+        run_date = date.today()
+    analysis = config.analysis
 
-    if not pairs:
-        logger.warning('no pairs found for yesterday — check scheduled query')
-        return
+    logger.info('fetching url shares')
+    rows = db.fetch_url_shares(fetch_url_shares_query(analysis, run_date))
+    logger.info(f'fetched {len(rows)} share rows')
+    if not rows:
+        logger.warning(
+            'fetched 0 share rows; verify source data volume and URL eligibility '
+            'filters (min_url_sharers, max_url_df_fraction)'
+        )
 
-    logger.info('building graph')
-    graph = build_graph(pairs, config.analysis.min_edge_weight)
+    accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, run_date))
 
-    logger.info('clustering graph')
-    clusters = cluster_graph(graph, config.analysis.resolution, config.analysis.min_cluster_size)
-    logger.info(f'found {len(clusters)} clusters')
+    network = similarity_network(rows, analysis.edge_epsilon)
+    logger.info(
+        f'similarity network: {network.accounts_eligible}/{accounts_raw} accounts, '
+        f'{network.urls_eligible} urls, {network.graph_edges} edges'
+    )
+
+    result = dismantle(
+        network.graph,
+        analysis.edge_quantile_grid,
+        analysis.centrality_quantile_grid,
+        analysis.density_floor,
+        analysis.max_flagged_fraction,
+        analysis.max_flagged_accounts,
+        analysis.min_cluster_size,
+        logger,
+    )
+
+    clusters = cluster_core(
+        result.core, network.matrix, network.tfidf, analysis.resolution, analysis.min_cluster_size
+    )
+    logger.info(f'found {len(clusters)} clusters (knee_found={result.knee_found})')
 
     logger.info('gathering member timestamps')
     all_dids = set()
@@ -71,7 +120,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     if all_dids:
         sanitized_dids = [_sanitize_did(did) for did in sorted(all_dids)]
         dids_placeholder = ','.join(f"'{did}'" for did in sanitized_dids)
-        timestamps_query = fetch_member_timestamps_query(config.analysis, dids_placeholder)
+        timestamps_query = fetch_member_timestamps_query(analysis, dids_placeholder, run_date)
         timestamp_rows = db.fetch_member_timestamps(timestamps_query)
 
         member_timestamps: dict[str, list[datetime]] = {}
@@ -86,26 +135,23 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     timestamped_clusters = [compute_temporal_metrics(cluster, member_timestamps) for cluster in clusters]
 
     logger.info('gathering historical membership')
-    history_query = fetch_historical_membership_query(config.analysis)
+    history_query = fetch_historical_membership_query(analysis, run_date)
     history_rows = db.fetch_historical_membership(history_query)
 
-    previous_membership: dict[str, frozenset[str]] = {}
-    for row in history_rows:
-        if row.cluster_id not in previous_membership:
-            previous_membership[row.cluster_id] = frozenset()
-        previous_membership[row.cluster_id] = previous_membership[row.cluster_id] | frozenset([row.did])
+    previous_membership = _latest_previous_membership(history_rows)
 
     logger.info('computing evolution')
     events = compute_evolution(
         clusters,
         previous_membership,
         run_date,
-        config.analysis.jaccard_threshold,
+        analysis.jaccard_threshold,
     )
 
     logger.info('clearing stale data for today (idempotent re-run guard)')
-    db.delete_run_date(config.analysis.clusters_table, run_date)
-    db.delete_run_date(config.analysis.membership_table, run_date)
+    db.delete_run_date(analysis.clusters_table, run_date)
+    db.delete_run_date(analysis.membership_table, run_date)
+    db.delete_run_date(analysis.runs_table, run_date)
 
     logger.info('persisting results')
     cluster_rows = [
@@ -113,8 +159,8 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
         for ts_cluster, event in zip(timestamped_clusters, events)
         if event.evolution_type != 'death'
     ]
-    db.insert_clusters(config.analysis.clusters_table, cluster_rows)
-    logger.info(f'wrote {len(cluster_rows)} cluster results to {config.analysis.clusters_table}')
+    db.insert_clusters(analysis.clusters_table, cluster_rows)
+    logger.info(f'wrote {len(cluster_rows)} cluster results to {analysis.clusters_table}')
 
     membership_rows = []
     for ts_cluster, event in zip(timestamped_clusters, events):
@@ -122,8 +168,28 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
             for did in ts_cluster.members:
                 membership_rows.append((run_date, event.cluster_id, did))
 
-    db.insert_membership(config.analysis.membership_table, membership_rows)
-    logger.info(f'wrote {len(membership_rows)} membership rows to {config.analysis.membership_table}')
+    db.insert_membership(analysis.membership_table, membership_rows)
+    logger.info(f'wrote {len(membership_rows)} membership rows to {analysis.membership_table}')
+
+    db.insert_run(
+        analysis.runs_table,
+        RunMetadata(
+            run_date=run_date,
+            window_days=analysis.window_days,
+            accounts_raw=accounts_raw,
+            accounts_eligible=network.accounts_eligible,
+            urls_eligible=network.urls_eligible,
+            graph_edges=network.graph_edges,
+            edge_quantile=result.edge_quantile,
+            centrality_quantile=result.centrality_quantile,
+            min_component_density=result.min_component_density,
+            knee_found=result.knee_found,
+            guardrail_triggered=result.guardrail_triggered,
+            flagged_accounts=result.core.vcount(),
+            cluster_count=len(cluster_rows),
+        ),
+    )
+    logger.info(f'wrote run metadata to {analysis.runs_table}')
 
 
 def main() -> None:
@@ -133,7 +199,11 @@ def main() -> None:
     config = AppConfig.from_env()
     logger.info(f'starting url-cosharing detector (interval={config.analysis.interval_seconds}s)')
     logger.info(
-        f'resolution={config.analysis.resolution}, min_edge_weight={config.analysis.min_edge_weight}, min_cluster_size={config.analysis.min_cluster_size}, jaccard_threshold={config.analysis.jaccard_threshold}'
+        f'window_days={config.analysis.window_days}, min_unique_urls={config.analysis.min_unique_urls}, '
+        f'min_url_sharers={config.analysis.min_url_sharers}, density_floor={config.analysis.density_floor}, '
+        f'max_flagged_fraction={config.analysis.max_flagged_fraction}, '
+        f'max_flagged_accounts={config.analysis.max_flagged_accounts}, resolution={config.analysis.resolution}, '
+        f'min_cluster_size={config.analysis.min_cluster_size}, jaccard_threshold={config.analysis.jaccard_threshold}'
     )
 
     db = CosharingDb(config.clickhouse)

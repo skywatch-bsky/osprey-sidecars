@@ -440,9 +440,9 @@ If bot-like rate is unexpectedly high (>5%):
 
 ## URL Co-Sharing Clusters
 
-### Table: `url_cosharing_clusters`
+### Table: `url_cosharing_clusters` and `url_cosharing_runs`
 
-Validates cluster granularity, network health, and evolution tracking.
+Validates cluster granularity, network health, and dismantling pipeline execution via run metadata.
 
 #### Query 1: Cluster count and size distribution
 
@@ -465,9 +465,9 @@ ORDER BY run_date DESC;
 
 **Healthy ranges:**
 - Tiny/small clusters (2–20 members) should dominate (60–80% of clusters).
-- Large clusters (>100 members) should be rare (<5% of clusters). If >10%, CPM resolution is too low; see the resolution re-tuning section below.
-- Max cluster size should not exceed 500 accounts (if so, there is likely a giant component and resolution needs reduction).
-- Avg size 5–15 accounts per cluster indicates appropriate granularity.
+- Density-based dismantling (precision-first pipeline) flags far fewer accounts than Leiden-over-everything: expect smaller, more focused clusters and lower overall cluster counts compared to prior methodology.
+- Large clusters (>100 members) should be rare (<5%); if frequent, CPM resolution is too low.
+- Avg size 3–10 accounts per cluster indicates appropriate granularity for coordinated behaviour.
 
 #### Query 2: Total weight sanity (raw co-share magnitude per cluster)
 
@@ -485,9 +485,9 @@ ORDER BY run_date DESC;
 ```
 
 **Healthy ranges:**
-- Avg total_weight (sum of raw co-share counts per cluster) 2–10 co-shares.
-- P95 10–50 co-shares; extreme clusters should have high raw weights (sign of true coordination).
-- If avg < 2, clusters are too granular; if avg > 50, resolution is too low or min_edge_weight is too low.
+- Avg total_weight (Σ over cluster URLs of C(members, 2)) 2–10 co-shares.
+- P95 10–50 co-shares; extreme clusters indicate strong coordination.
+- If avg < 2, clusters are too granular; if avg > 50, resolution is too low or thresholds need tightening.
 
 #### Query 3: Evolution-type mix (birth/continuation/merge/split/death)
 
@@ -505,67 +505,97 @@ ORDER BY run_date DESC, pct_of_day DESC;
 
 **Healthy ranges:**
 - Continuation should dominate (60–80%) once clusters have stabilized (after day 2).
+- With a 7-day rolling window advancing daily (6/7 data overlap), evolution is heavily skewed toward continuation. If continuation rate drops below 50%, investigate whether the Jaccard threshold needs retuning (see "Jaccard threshold guidance" below).
 - Birth rate 10–20% (new clusters emerging daily).
-- Merge/split/death rates low (5–10% combined), indicating stable cluster boundaries.
-- On day 1, all events are births (expected).
+- Merge/split/death rates low (5–10% combined).
 
-#### Query 4: Newman weight contribution (verification of weighting scheme)
+#### Query 4: Run metadata health (dismantling execution)
 
 ```sql
 SELECT
     run_date,
-    ROUND(AVG(total_edges), 1) as avg_edges,
-    ROUND(MAX(total_edges), 0) as max_edges,
-    ROUND(AVG(total_weight) / AVG(total_edges), 2) as avg_weight_per_edge
-FROM url_cosharing_clusters
-WHERE run_date >= today() - 2
-GROUP BY run_date
+    knee_found,
+    guardrail_triggered,
+    accounts_raw,
+    accounts_eligible,
+    urls_eligible,
+    graph_edges,
+    edge_quantile,
+    centrality_quantile,
+    ROUND(min_component_density, 3) as min_density,
+    flagged_accounts,
+    ROUND(flagged_accounts / nullIf(accounts_eligible, 0) * 100, 2) as flagged_pct,
+    cluster_count
+FROM url_cosharing_runs
+WHERE run_date >= today() - 14
 ORDER BY run_date DESC;
 ```
 
 **Healthy ranges:**
-- Avg weight per edge 1–3 (raw co-share count per pair in cluster).
-- Clustering is done on Newman weights (much smaller, ~0.5–2 per edge), but total_weight is reported as the raw sum. This query verifies that edges have non-trivial raw weight.
+- **Denominator caveat:** the paper's observed 0.4–1.5% coordinated-account band is relative to full dataset populations (6k–178k accounts), which corresponds to our `accounts_raw`, not `accounts_eligible`. `flagged_accounts / accounts_raw` in the 0.05–0.5% range is consistent with the paper; `flagged_pct` against `accounts_eligible` runs much higher (2–5%) because the ≥10-unique-URLs eligibility filter shrinks the denominator ~50×.
+- Absolute `flagged_accounts` should sit in the low hundreds (paper observed 25–764). Investigate sustained values near the `MAX_FLAGGED_ACCOUNTS` ceiling (default 750).
+- `knee_found = false` days are **correct behaviour**: they indicate no sharp phase transition in the density grid (no obvious knee = low confidence in a single optimal point). Alert only if paired with consecutive false runs and rising `accounts_eligible`.
+- Frequent `guardrail_triggered = true` paired with rising `flagged_pct` signals the knee rule is being overridden: inspect the density surface (see "Density-Surface Calibration" below) before loosening `MAX_FLAGGED_FRACTION`.
+
+### Density-Surface Calibration
+
+The dismantling surface is a grid of (edge_quantile, centrality_quantile) pairs, each point yielding a component density and surviving node count. Operators inspect this surface offline to calibrate `DENSITY_FLOOR` and validate `MAX_FLAGGED_FRACTION`.
+
+**How to read the surface:** Run `uv run python -m url_cosharing.calibrate` to dump the per-cell grid as TSV, including `min_component_density`, `surviving_nodes`, `surviving_edges`. The header row names the columns.
+
+**Phase transitions:** A healthy surface shows a sharp density jump (phase transition) between two adjacent cells, indicating a transition from sparse to dense regions. The post-jump plateau is the natural equilibrium for the day's data.
+
+**Tuning `DENSITY_FLOOR`:**
+- Set it just below the post-jump plateau (e.g., if density jumps from 0.3 to 0.7, set `DENSITY_FLOOR` to 0.65).
+- Too high: results in permanent `knee_found = false` (no cell survives the threshold), which is safe but provides no flagging.
+- Too low: the knee rule flags weak phase transitions, producing noise and raising `flagged_pct`.
+- Adjust incrementally (±0.05 steps) over 3–5 days and re-run Query 4 above to verify the effect.
+
+**Validating the guardrail (`MAX_FLAGGED_FRACTION` + `MAX_FLAGGED_ACCOUNTS`):**
+- The effective ceiling is `min(MAX_FLAGGED_FRACTION × accounts_eligible, MAX_FLAGGED_ACCOUNTS)`. The guardrail is an operational safety bound of this implementation — the paper prescribes no size cap; its threshold selection is the knee rule alone.
+- If `flagged_accounts` regularly hugs the ceiling AND post-hoc triage shows false positives, the dismantling is over-flagging: raise `DENSITY_FLOOR` (quality lever) before touching the caps.
+- If `guardrail_triggered = true` recurs on candidates with density ≥ 0.9 sitting just above the ceiling, the cap is clipping plausible cores: raise `MAX_FLAGGED_ACCOUNTS` in small steps and re-check precision.
+- Sanity band: `flagged_accounts / accounts_raw` between 0.05% and 0.5% is comfortably below the paper's observed 0.4–1.5%.
 
 ### CPM Resolution Re-Tuning Procedure
 
-When deploying Newman-weighted clustering, the effective edge weights drop by 1–2 orders of magnitude compared to raw counts. CPM quality depends on the balance between resolution parameter and edge-weight scale. Follow this procedure to tune `URL_COSHARING_RESOLUTION`:
+Leiden CPM now runs on the **dismantled core only** with cosine-similarity edge weights (not Newman weights; weights are ≤ 1 per edge). The resolution sweep procedure remains the same but applies to a much smaller subgraph and uses the calibrate module instead of raw pairs.
 
 **Step 1: Baseline**
-Run today's clustering and record cluster count and size distribution (Query 1).
+Run the density surface dump (`uv run python -m url_cosharing.calibrate`) and record cluster count and size distribution from the selected cell (Query 1 above).
 
 **Step 2: Sweep**
-On the same pairs (fix run_date), re-run the Leiden algorithm with resolution parameters:
-- 0.01 (very loose)
-- 0.02 (loose)
-- 0.05 (medium)
-- 0.1 (tight)
-- 0.2 (very tight)
-
-Re-compute cluster count and distribution for each.
+Modify `URL_COSHARING_RESOLUTION` and re-run the calibrate module with resolution parameters 0.01, 0.02, 0.05, 0.1, 0.2. For each, check Query 1 metrics.
 
 **Step 3: Compare**
-Pick the resolution that yields cluster metrics closest to the baseline (e.g., ≤20% change in cluster count, similar median size). Update `URL_COSHARING_RESOLUTION` env var.
+Pick the resolution that yields cluster metrics closest to baseline (e.g., ≤20% change in cluster count). Update `URL_COSHARING_RESOLUTION`.
 
 **Step 4: Monitor**
-After applying the change, re-run Query 1 for 3 days. Verify that evolution-type mix remains stable (continuation-dominant).
-
-**Note:** If the default 0.05 already produces very few clusters, increase to 0.1 or 0.2. If it produces thousands of singleton clusters, decrease to 0.01 or 0.005.
+After applying the change, re-run Query 1 for 3 days. Verify evolution-type mix remains continuation-dominant.
 
 ### Tuning Levers
 
-- **Resolution (`URL_COSHARING_RESOLUTION`):** Default 0.05. See re-tuning procedure above.
-- **Min edge weight (`URL_COSHARING_MIN_EDGE_WEIGHT`):** Default 2 (pairs must co-share ≥2 URLs). Increase to 3 for stricter linking; decrease to 1 for broader coverage.
-- **Jaccard threshold (`URL_COSHARING_JACCARD_THRESHOLD`):** Default 0.5 (strict). Lower to ~0.3 to link more clusters across days (looser evolution matching, more continuations, fewer birth/death events). See "Jaccard threshold guidance" below.
+- **Density Floor (`URL_COSHARING_DENSITY_FLOOR`):** Default 0.5. Lower to flag more weak knees; raise to reduce noise. See "Density-Surface Calibration" above.
+- **Max Flagged Fraction (`URL_COSHARING_MAX_FLAGGED_FRACTION`):** Default 0.05 (5% of eligible accounts; raised from 0.02 on 2026-07-07). One half of the guardrail ceiling `min(fraction × eligible, max_flagged_accounts)`; its remaining job is degenerate days when the eligible graph itself is tiny and flagging most of it would be implausible.
+- **Max Flagged Accounts (`URL_COSHARING_MAX_FLAGGED_ACCOUNTS`):** Default 750. Absolute half of the guardrail ceiling, anchored to Cinus et al.'s observed core sizes (25–764 accounts across networks of 6k–178k). Observed coordinated cores are roughly constant in absolute size, so this bound — not the fraction — should govern normal days. Calibrate down only on precision evidence from post-hoc cluster triage (but fix false positives by raising `DENSITY_FLOOR` first); calibrate up only if runs repeatedly show `guardrail_triggered = true` on dense (≥0.9) candidates just above the cap.
+- **Edge Epsilon (`URL_COSHARING_EDGE_EPSILON`):** Default 0.05. Similarity threshold for including edges; lower includes more weak ties.
+- **Edge Quantile Grid (`URL_COSHARING_EDGE_QUANTILE_GRID`):** Default `0.50,0.60,0.70,0.80,0.90,0.95,0.99`. Coarser grid (fewer points) speeds computation; finer grid refines knee detection.
+- **Centrality Quantile Grid (`URL_COSHARING_CENTRALITY_QUANTILE_GRID`):** Default `0.50,0.60,0.70,0.80,0.90,0.95,0.99`. Controls dismantling grid density; same semantics as edge quantile grid.
+- **Min Unique URLs (`URL_COSHARING_MIN_UNIQUE_URLS`):** Default 10. Accounts sharing fewer URLs are excluded; raise to focus on heavy sharers.
+- **Min URL Sharers (`URL_COSHARING_MIN_URL_SHARERS`):** Default 5. URLs shared by fewer accounts are excluded; raise to filter niche URLs.
+- **Max URL DF Fraction (`URL_COSHARING_MAX_URL_DF_FRACTION`):** Default 0.90. Excludes URLs shared by more than this fraction of accounts (sklearn max_df semantics; a rarely-binding safety valve — viral downweighting is handled by TF-IDF). Lower to be more aggressive on viral filtering.
+- **Window Days (`URL_COSHARING_WINDOW_DAYS`):** Default 7. Historical window for URL shares; raise to include older data (smoother, less volatile).
+- **Resolution (`URL_COSHARING_RESOLUTION`):** Default 0.05. CPM parameter; see re-tuning procedure above.
+- **Jaccard Threshold (`URL_COSHARING_JACCARD_THRESHOLD`):** Default 0.5 (strict). See "Jaccard threshold guidance" below.
 
 ### Jaccard Threshold Guidance
 
-The Jaccard similarity threshold controls whether a cluster on day N and a cluster on day N+1 are considered the "same cluster" (continuation) or distinct (split/merge/birth/death). 
+The Jaccard similarity threshold controls whether a cluster on day N and a cluster on day N+1 are considered the "same cluster" (continuation) or distinct (split/merge/birth/death).
 
-- **Default 0.5 (strict):** Clusters must share ≥50% of members to be linked. Best for detecting rapid composition changes (e.g., fast-moving networks).
-- **Literature default ~0.3 (loose):** Clusters must share ≥30% of members. Better for tracking long-lived communities with gradual member churn. Produces more continuations, fewer evolution events.
+- **Default 0.5 (strict):** Clusters must share ≥50% of members to be linked. Best for detecting rapid composition changes.
+- **~0.3 (loose):** Clusters must share ≥30% of members. Better for tracking long-lived communities with gradual member churn. Produces more continuations, fewer evolution events.
 
-**Effect:** Lowering threshold increases continuation rate and decreases birth/death/merge/split rates. Use this to balance between detecting new coordination and tracking stable groups.
+**Effect:** Lowering threshold increases continuation rate and decreases birth/death/merge/split rates. With the 7-day rolling window (6/7 daily overlap), evolution naturally skews toward continuation; adjust threshold if the observed balance seems off.
 
 ---
 

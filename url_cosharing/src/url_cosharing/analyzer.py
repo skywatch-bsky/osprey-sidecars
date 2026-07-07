@@ -7,18 +7,12 @@ from typing import Literal
 
 import igraph as ig
 import leidenalg
+import numpy as np
+from scipy.sparse import csr_array
+
+from url_cosharing.similarity import ShareMatrix
 
 EvolutionType = Literal['birth', 'death', 'continuation', 'merge', 'split']
-
-
-@dataclass(frozen=True)
-class PairRow:
-    date: date
-    account_a: str
-    account_b: str
-    weight: int
-    newman_weight: float
-    shared_urls: list[str]
 
 
 @dataclass(frozen=True)
@@ -32,6 +26,8 @@ class ClusterResult:
     sample_dids: list[str]
     sample_urls: list[str]
     resolution_parameter: float
+    mean_edge_similarity: float
+    subgraph_density: float
 
 
 @dataclass(frozen=True)
@@ -68,128 +64,6 @@ def compute_jaccard(set_a: frozenset[str], set_b: frozenset[str]) -> float:
     union = len(set_a | set_b)
 
     return intersection / union
-
-
-def build_graph(pairs: list[PairRow], min_edge_weight: int) -> ig.Graph:
-    """
-    Build an undirected weighted graph from pairs, filtering by minimum raw edge weight.
-
-    Duplicate (account_a, account_b) pairs are aggregated before edge creation:
-    raw weights and Newman weights are summed, shared URL lists are unioned.
-    Edges are added in a single batch with attribute lists, so the graph can
-    never contain parallel edges or None-valued attributes.
-
-    Returns an empty graph (0 vertices, 0 edges) if no qualifying pairs.
-    """
-    aggregated: dict[tuple[str, str], tuple[int, float, set[str]]] = {}
-    for pair in pairs:
-        key = (pair.account_a, pair.account_b) if pair.account_a < pair.account_b else (pair.account_b, pair.account_a)
-        if key in aggregated:
-            weight, newman_weight, urls = aggregated[key]
-            aggregated[key] = (
-                weight + pair.weight,
-                newman_weight + pair.newman_weight,
-                urls | set(pair.shared_urls),
-            )
-        else:
-            aggregated[key] = (pair.weight, pair.newman_weight, set(pair.shared_urls))
-
-    # Filter by min_edge_weight on the *aggregated* raw weight so that
-    # fragmented duplicate pairs (each below threshold) are combined first.
-    aggregated = {key: val for key, val in aggregated.items() if val[0] >= min_edge_weight}
-
-    if not aggregated:
-        return ig.Graph()
-
-    sorted_dids = sorted({did for key in aggregated for did in key})
-    did_to_idx = {did: idx for idx, did in enumerate(sorted_dids)}
-
-    graph = ig.Graph(len(sorted_dids))
-    graph.vs['name'] = sorted_dids
-
-    sorted_keys = sorted(aggregated)
-    graph.add_edges([(did_to_idx[a], did_to_idx[b]) for a, b in sorted_keys])
-    graph.es['weight'] = [aggregated[key][0] for key in sorted_keys]
-    graph.es['newman_weight'] = [aggregated[key][1] for key in sorted_keys]
-    graph.es['shared_urls'] = [sorted(aggregated[key][2]) for key in sorted_keys]
-
-    return graph
-
-
-def cluster_graph(graph: ig.Graph, resolution: float, min_cluster_size: int) -> list[ClusterResult]:
-    """
-    Run Leiden community detection on a weighted graph and compute per-cluster metrics.
-
-    Community detection is optimized over Newman-weighted edges, where weights are
-    assigned using Newman's collaboration weighting (Σ 1/(k_url − 1) per pair). This
-    down-weights viral URLs that appear in many shares. The CPM resolution parameter
-    compares edge-weight density against the threshold; after switching to Newman weights,
-    the default resolution may require re-tuning to maintain desired cluster density.
-
-    Args:
-        graph: igraph Graph object with weighted edges (weight, newman_weight) and shared_urls attributes.
-        resolution: CPM resolution parameter for Leiden algorithm.
-        min_cluster_size: Minimum number of members required to keep a cluster.
-
-    Returns:
-        List of ClusterResult objects for clusters meeting the size threshold.
-    """
-    if graph.vcount() == 0:
-        return []
-
-    partition = leidenalg.find_partition(
-        graph,
-        leidenalg.CPMVertexPartition,
-        weights='newman_weight',
-        resolution_parameter=resolution,
-    )
-
-    membership = partition.membership
-
-    clusters_by_id = {}
-    for vertex_idx, cluster_id in enumerate(membership):
-        if cluster_id not in clusters_by_id:
-            clusters_by_id[cluster_id] = []
-        clusters_by_id[cluster_id].append(vertex_idx)
-
-    results = []
-    for cluster_id, vertex_indices in clusters_by_id.items():
-        if len(vertex_indices) < min_cluster_size:
-            continue
-
-        members = frozenset(graph.vs[idx]['name'] for idx in vertex_indices)
-        member_list = sorted(members)
-
-        subgraph = graph.induced_subgraph(vertex_indices)
-
-        total_edges = subgraph.ecount()
-        total_weight = sum(subgraph.es['weight']) if subgraph.ecount() > 0 else 0
-
-        unique_urls_set = set()
-        for edge in subgraph.es:
-            if 'shared_urls' in edge.attributes():
-                unique_urls_set.update(edge['shared_urls'])
-
-        unique_urls = len(unique_urls_set)
-
-        sample_dids = member_list[:10]
-
-        sample_urls_list = list(unique_urls_set)[:10]
-
-        result = ClusterResult(
-            cluster_id='',
-            members=members,
-            member_count=len(members),
-            total_edges=total_edges,
-            total_weight=total_weight,
-            unique_urls=unique_urls,
-            sample_dids=sample_dids,
-            sample_urls=sample_urls_list,
-            resolution_parameter=resolution,
-        )
-        results.append(result)
-
-    return results
 
 
 def compute_temporal_metrics(
@@ -242,6 +116,8 @@ def compute_temporal_metrics(
         sample_dids=cluster.sample_dids,
         sample_urls=cluster.sample_urls,
         resolution_parameter=cluster.resolution_parameter,
+        mean_edge_similarity=cluster.mean_edge_similarity,
+        subgraph_density=cluster.subgraph_density,
         temporal_spread_hours=temporal_spread_hours,
         mean_posting_interval_seconds=mean_posting_interval_seconds,
     )
@@ -374,3 +250,76 @@ def compute_evolution(
             events.append(event)
 
     return events
+
+
+def cluster_core(
+    core: ig.Graph,
+    matrix: ShareMatrix,
+    tfidf: csr_array,
+    resolution: float,
+    min_cluster_size: int,
+) -> list[ClusterResult]:
+    """Leiden CPM over cosine-similarity weights on the dismantled core.
+
+    Cluster metrics come from two sources: edge metrics (mean_edge_similarity,
+    subgraph_density, total_edges) from the core subgraph; URL metrics
+    (unique_urls, total_weight, sample_urls) from the bipartite share matrix.
+    total_weight keeps its co-share-count semantics: sum over cluster URLs of
+    C(k, 2) where k is the number of cluster members sharing that URL.
+    """
+    if core.vcount() == 0:
+        return []
+
+    partition = leidenalg.find_partition(
+        core,
+        leidenalg.CPMVertexPartition,
+        weights='similarity',
+        resolution_parameter=resolution,
+        seed=42,
+    )
+
+    account_to_row = {did: idx for idx, did in enumerate(matrix.accounts)}
+
+    clusters_by_id: dict[int, list[int]] = {}
+    for vertex_idx, cluster_id in enumerate(partition.membership):
+        clusters_by_id.setdefault(cluster_id, []).append(vertex_idx)
+
+    results = []
+    for vertex_indices in clusters_by_id.values():
+        if len(vertex_indices) < min_cluster_size:
+            continue
+
+        members = frozenset(core.vs[idx]['name'] for idx in vertex_indices)
+        subgraph = core.induced_subgraph(vertex_indices)
+        total_edges = subgraph.ecount()
+        mean_edge_similarity = (
+            float(np.mean(subgraph.es['similarity'])) if total_edges > 0 else 0.0
+        )
+        subgraph_density = float(subgraph.density(loops=False))
+
+        member_rows = [account_to_row[did] for did in sorted(members)]
+        sub_counts = matrix.counts[member_rows, :]
+        sharers = np.asarray((sub_counts > 0).sum(axis=0)).ravel()
+        unique_urls = int((sharers >= 2).sum())
+        total_weight = int((sharers * (sharers - 1) // 2).sum())
+
+        mass = np.asarray(tfidf[member_rows, :].sum(axis=0)).ravel()
+        order = np.argsort(-mass, kind='stable')
+        sample_urls = [matrix.urls[k] for k in order[:10] if mass[k] > 0]
+
+        results.append(
+            ClusterResult(
+                cluster_id='',
+                members=members,
+                member_count=len(members),
+                total_edges=total_edges,
+                total_weight=total_weight,
+                unique_urls=unique_urls,
+                sample_dids=sorted(members)[:10],
+                sample_urls=sample_urls,
+                resolution_parameter=resolution,
+                mean_edge_similarity=mean_edge_similarity,
+                subgraph_density=subgraph_density,
+            )
+        )
+    return results
