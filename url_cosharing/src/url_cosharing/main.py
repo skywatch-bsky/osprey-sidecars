@@ -13,7 +13,7 @@ from url_cosharing.analyzer import (
     compute_temporal_metrics,
 )
 from url_cosharing.config import AppConfig
-from url_cosharing.db import CosharingDb, RunMetadata
+from url_cosharing.db import CosharingDb, MembershipRow, RunMetadata
 from url_cosharing.dismantling import dismantle
 from url_cosharing.queries import (
     fetch_historical_membership_query,
@@ -37,6 +37,27 @@ def _sanitize_did(did: str) -> str:
     DIDs should match pattern did:plc:[a-z0-9]+. Keep only these characters.
     """
     return re.sub(r'[^a-z0-9:.]', '', did)
+
+
+def _latest_previous_membership(history_rows: list[MembershipRow]) -> dict[str, frozenset[str]]:
+    """Build previous membership from each cluster's most recent snapshot only.
+
+    Unioning rows across the whole evolution window would accumulate departed
+    members, depressing Jaccard similarity against today's membership and
+    misclassifying normal churn as births, deaths, or splits.
+    """
+    latest_run_date: dict[str, date] = {}
+    for row in history_rows:
+        current = latest_run_date.get(row.cluster_id)
+        if current is None or row.run_date > current:
+            latest_run_date[row.cluster_id] = row.run_date
+
+    members: dict[str, set[str]] = {}
+    for row in history_rows:
+        if row.run_date == latest_run_date[row.cluster_id]:
+            members.setdefault(row.cluster_id, set()).add(row.did)
+
+    return {cluster_id: frozenset(dids) for cluster_id, dids in members.items()}
 
 
 def _handle_signal(signum: int, _frame: object) -> None:
@@ -107,11 +128,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     history_query = fetch_historical_membership_query(analysis)
     history_rows = db.fetch_historical_membership(history_query)
 
-    previous_membership: dict[str, frozenset[str]] = {}
-    for row in history_rows:
-        if row.cluster_id not in previous_membership:
-            previous_membership[row.cluster_id] = frozenset()
-        previous_membership[row.cluster_id] = previous_membership[row.cluster_id] | frozenset([row.did])
+    previous_membership = _latest_previous_membership(history_rows)
 
     logger.info('computing evolution')
     events = compute_evolution(

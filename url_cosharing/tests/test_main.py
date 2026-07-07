@@ -95,6 +95,61 @@ def app_config(base_config: AnalysisConfig) -> AppConfig:
     )
 
 
+class TestLatestPreviousMembership:
+    """Tests for _latest_previous_membership snapshot selection."""
+
+    def test_uses_only_latest_snapshot_per_cluster(self) -> None:
+        """Departed members from older snapshots must not accumulate."""
+        from url_cosharing.main import _latest_previous_membership
+
+        rows = [
+            MembershipRow(run_date=date(2026, 7, 4), cluster_id='c1', did='did:plc:a'),
+            MembershipRow(run_date=date(2026, 7, 4), cluster_id='c1', did='did:plc:b'),
+            MembershipRow(run_date=date(2026, 7, 4), cluster_id='c1', did='did:plc:c'),
+            MembershipRow(run_date=date(2026, 7, 6), cluster_id='c1', did='did:plc:b'),
+            MembershipRow(run_date=date(2026, 7, 6), cluster_id='c1', did='did:plc:c'),
+            MembershipRow(run_date=date(2026, 7, 6), cluster_id='c1', did='did:plc:d'),
+        ]
+
+        result = _latest_previous_membership(rows)
+
+        assert result == {'c1': frozenset({'did:plc:b', 'did:plc:c', 'did:plc:d'})}
+
+    def test_clusters_keep_independent_latest_dates(self) -> None:
+        """Each cluster resolves its own latest snapshot date."""
+        from url_cosharing.main import _latest_previous_membership
+
+        rows = [
+            MembershipRow(run_date=date(2026, 7, 6), cluster_id='c1', did='did:plc:a'),
+            MembershipRow(run_date=date(2026, 7, 3), cluster_id='c2', did='did:plc:x'),
+            MembershipRow(run_date=date(2026, 7, 5), cluster_id='c2', did='did:plc:y'),
+        ]
+
+        result = _latest_previous_membership(rows)
+
+        assert result == {
+            'c1': frozenset({'did:plc:a'}),
+            'c2': frozenset({'did:plc:y'}),
+        }
+
+    def test_order_independent(self) -> None:
+        """Result does not depend on row ordering from the query."""
+        from url_cosharing.main import _latest_previous_membership
+
+        rows = [
+            MembershipRow(run_date=date(2026, 7, 3), cluster_id='c1', did='did:plc:old'),
+            MembershipRow(run_date=date(2026, 7, 6), cluster_id='c1', did='did:plc:new'),
+        ]
+
+        assert _latest_previous_membership(rows) == _latest_previous_membership(rows[::-1])
+        assert _latest_previous_membership(rows) == {'c1': frozenset({'did:plc:new'})}
+
+    def test_empty_history(self) -> None:
+        from url_cosharing.main import _latest_previous_membership
+
+        assert _latest_previous_membership([]) == {}
+
+
 class TestSanitizeDid:
     """Tests for _sanitize_did defence-in-depth SQL sanitization."""
 
