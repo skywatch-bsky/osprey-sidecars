@@ -1,5 +1,7 @@
 # Density-Dismantling Implementation Plan — Phase 1: Configuration and schema
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 **Goal:** All new detection knobs parse from env vars into the frozen `AnalysisConfig`; ClickHouse schema supports the new outputs (`url_cosharing_runs` table, two new cluster columns).
 
 **Architecture:** The `url_cosharing` sidecar keeps its Functional Core / Imperative Shell split. This phase touches only the Core config module (`config.py`) and the cross-repo ClickHouse DDL in the sibling `skywatch-osprey` repo. No detection-path behaviour changes yet.

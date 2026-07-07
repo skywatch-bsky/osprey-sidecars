@@ -1,5 +1,7 @@
 # Density-Dismantling Implementation Plan — Phase 6: Documentation and calibration
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 **Goal:** Operators can understand the new methodology, calibrate grids/guardrails against production data, and dump the density surface for offline inspection.
 
 **Architecture:** Documentation updates (`url_cosharing/CLAUDE.md`, `url_cosharing/README.md`, `docs/calibration.md`) plus one thin Imperative Shell module `calibrate.py` invoked as `uv run python -m url_cosharing.calibrate` (there is **no** scripts/ directory convention in this repo — module invocation matches the established `uv run python -m <sidecar>.main` pattern). Surface formatting is a pure function so the shell stays trivially thin.

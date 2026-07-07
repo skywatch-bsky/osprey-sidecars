@@ -12,7 +12,6 @@ from url_cosharing.similarity import (
     tfidf_transform,
 )
 
-
 class TestFilterShares:
     """Tests for in-Python activity/df filters (AC1.2, AC1.3)."""
 
@@ -25,7 +24,7 @@ class TestFilterShares:
             UrlShareRow(did='a2', url='u4', share_count=1),
             UrlShareRow(did='a2', url='u5', share_count=1),
         ]
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1, max_url_df_fraction=1.0)
+        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
         # a1 has 2 unique URLs, dropped; a2 has 3, kept
         assert len(result) == 3
         assert all(r.did == 'a2' for r in result)
@@ -37,7 +36,7 @@ class TestFilterShares:
             UrlShareRow(did='a1', url='u2', share_count=1),
             UrlShareRow(did='a1', url='u3', share_count=1),
         ]
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1, max_url_df_fraction=1.0)
+        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
         assert len(result) == 3
         assert all(r.did == 'a1' for r in result)
 
@@ -49,7 +48,7 @@ class TestFilterShares:
             UrlShareRow(did='a2', url='u3', share_count=1),  # a2 and a3
             UrlShareRow(did='a3', url='u3', share_count=1),
         ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2, max_url_df_fraction=1.0)
+        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
         # u1 has df=1, dropped; u2 has df=1, dropped; u3 has df=2, kept
         assert len(result) == 2
         assert all(r.url == 'u3' for r in result)
@@ -60,50 +59,22 @@ class TestFilterShares:
             UrlShareRow(did='a1', url='u1', share_count=1),
             UrlShareRow(did='a2', url='u1', share_count=1),
         ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2, max_url_df_fraction=1.0)
+        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
         assert len(result) == 2
         assert all(r.url == 'u1' for r in result)
 
-    def test_ac13_url_ceiling_fraction_of_accounts(self):
-        """AC1.3: URLs shared by more than max_url_df_fraction of accounts are dropped.
+    def test_no_df_ceiling_reapplied_after_prefilter(self):
+        """The df ceiling is SQL-only: a URL shared by every account in the
+        (already prefiltered) input must survive.
 
-        10 accounts, fraction 0.5 -> ceiling 5. u5 (df=10) exceeds it; u1..u4 (df=1) pass."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),  # df=1
-            UrlShareRow(did='a2', url='u2', share_count=1),  # df=1
-            UrlShareRow(did='a3', url='u3', share_count=1),  # df=1
-            UrlShareRow(did='a4', url='u4', share_count=1),  # df=1
-            UrlShareRow(did='a1', url='u5', share_count=1),  # df=10 (shared by all 10 accounts)
-            UrlShareRow(did='a2', url='u5', share_count=1),
-            UrlShareRow(did='a3', url='u5', share_count=1),
-            UrlShareRow(did='a4', url='u5', share_count=1),
-            UrlShareRow(did='a5', url='u5', share_count=1),
-            UrlShareRow(did='a6', url='u5', share_count=1),
-            UrlShareRow(did='a7', url='u5', share_count=1),
-            UrlShareRow(did='a8', url='u5', share_count=1),
-            UrlShareRow(did='a9', url='u5', share_count=1),
-            UrlShareRow(did='a10', url='u5', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=1, max_url_df_fraction=0.5)
+        Rows arriving here have been reduced to active accounts by SQL, so a
+        fraction-of-accounts ceiling recomputed on them uses the wrong, much
+        smaller denominator and would drop legitimately hot coordination URLs."""
+        rows = [UrlShareRow(did=f'a{i}', url='hot', share_count=1) for i in range(10)]
+        rows += [UrlShareRow(did=f'a{i}', url=f'u{i}', share_count=1) for i in range(10)]
+        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
         kept_urls = {r.url for r in result}
-        assert 'u5' not in kept_urls
-        assert kept_urls == {'u1', 'u2', 'u3', 'u4'}
-
-    def test_ceiling_does_not_conflict_with_floor_on_head_heavy_dfs(self):
-        """Regression for the production outage: a df distribution dominated by
-        df=1 URLs must not collapse the eligible set when a floor is also active.
-
-        Under the old percentile semantics, quantile(0.9) of [1]*18+[3] == 1 < floor 3,
-        so nothing survived. Fraction semantics keep the co-shared URL."""
-        rows = [UrlShareRow(did=f'a{i}', url=f'rare{i}', share_count=1) for i in range(18)]
-        rows += [
-            UrlShareRow(did='a0', url='shared', share_count=1),
-            UrlShareRow(did='a1', url='shared', share_count=1),
-            UrlShareRow(did='a2', url='shared', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=3, max_url_df_fraction=0.9)
-        kept_urls = {r.url for r in result}
-        assert kept_urls == {'shared'}
+        assert 'hot' in kept_urls
 
     def test_empty_eligible_urls_warns(self, caplog):
         """When no URL passes eligibility, a warning is logged."""
@@ -115,9 +86,7 @@ class TestFilterShares:
         ]
         logger = logging.getLogger('test_filter_shares')
         with caplog.at_level(logging.WARNING, logger='test_filter_shares'):
-            result = filter_shares(
-                rows, min_unique_urls=1, min_url_sharers=5, max_url_df_fraction=0.9, logger=logger
-            )
+            result = filter_shares(rows, min_unique_urls=1, min_url_sharers=5, logger=logger)
 
         assert result == []
         assert any('no eligible URLs' in record.message for record in caplog.records)
@@ -126,24 +95,25 @@ class TestFilterShares:
         """Account survives with fewer remaining URLs than min_unique_urls (SQL mirror).
 
         This is the critical regression test: activity and df are computed
-        over *raw* rows, then filters applied together in one pass.
+        over the input rows, then filters applied together in one pass.
         """
-        # 13 accounts total, fraction 0.3 -> df ceiling 3.9.
-        # a1 shares u1 (df=1, kept) and u2..u5 (df=4 each, above ceiling, dropped).
-        # a1's raw unique count is 5 >= 3, so a1 stays active even though only
-        # one of its URLs survives the df filter.
-        rows = [UrlShareRow(did='a1', url=f'u{k}', share_count=1) for k in range(1, 6)]
-        filler = 0
-        for k in range(2, 6):
-            for _ in range(3):
-                rows.append(UrlShareRow(did=f'b{filler}', url=f'u{k}', share_count=1))
-                filler += 1
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1, max_url_df_fraction=0.3)
-        assert result == [UrlShareRow(did='a1', url='u1', share_count=1)]
+        # a1 shares u1 (df=2, kept) plus u2 and u3 (df=1, dropped by the floor).
+        # a1's raw unique count is 3 >= 3, so a1 stays active even though only
+        # one of its URLs survives the df floor.
+        rows = [
+            UrlShareRow(did='a1', url='u1', share_count=1),
+            UrlShareRow(did='a1', url='u2', share_count=1),
+            UrlShareRow(did='a1', url='u3', share_count=1),
+            UrlShareRow(did='a2', url='u1', share_count=1),
+        ]
+        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=2)
+        assert result == [
+            UrlShareRow(did='a1', url='u1', share_count=1),
+        ]
 
     def test_empty_input(self):
         """Empty input returns empty."""
-        result = filter_shares([], min_unique_urls=1, min_url_sharers=1, max_url_df_fraction=1.0)
+        result = filter_shares([], min_unique_urls=1, min_url_sharers=1)
         assert result == []
 
     def test_fully_filtered_input(self):
@@ -153,9 +123,8 @@ class TestFilterShares:
             UrlShareRow(did='a1', url='u2', share_count=1),
         ]
         # min_unique_urls=3 drops a1 (has 2 URLs)
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1, max_url_df_fraction=1.0)
+        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
         assert result == []
-
 
 class TestBuildShareMatrix:
     """Tests for sparse account-by-url share matrix."""
@@ -208,7 +177,6 @@ class TestBuildShareMatrix:
 
         assert matrix.accounts == ('a1', 'a2', 'a3')
         assert matrix.urls == ('u1', 'u2', 'u3')
-
 
 class TestTfidfTransform:
     """Tests for hand-rolled sparse TF-IDF transform."""
@@ -285,7 +253,6 @@ class TestTfidfTransform:
 
         assert np.all(np.isfinite(result.data))
         assert np.all(result.data >= 0)
-
 
 class TestBuildSimilarityGraph:
     """Tests for TF-IDF cosine similarity graph."""
@@ -384,7 +351,6 @@ class TestBuildSimilarityGraph:
 
         assert [v['name'] for v in graph.vs] == ['acc1', 'acc2']
 
-
 class TestSimilarityNetwork:
     """End-to-end integration tests."""
 
@@ -407,7 +373,7 @@ class TestSimilarityNetwork:
             rows=rows,
             min_unique_urls=1,
             min_url_sharers=1,
-            max_url_df_fraction=1.0,
+
             edge_epsilon=0.0,
         )
 
@@ -425,7 +391,7 @@ class TestSimilarityNetwork:
             rows=[],
             min_unique_urls=1,
             min_url_sharers=1,
-            max_url_df_fraction=1.0,
+
             edge_epsilon=0.0,
         )
 
@@ -446,7 +412,7 @@ class TestSimilarityNetwork:
             rows=rows,
             min_unique_urls=3,  # Both accounts have only 1 URL, will be filtered
             min_url_sharers=1,
-            max_url_df_fraction=1.0,
+
             edge_epsilon=0.0,
         )
 

@@ -1,5 +1,7 @@
 # Density-Dismantling Implementation Plan — Phase 5: Pipeline integration
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 **Goal:** Wire the new detection path end-to-end (fetch → similarity → dismantling → Leiden-on-core → temporal/evolution → writes incl. run metadata), then remove the pairs-based path and its config.
 
 **Architecture:** `analyzer.py` gains `cluster_core` (Leiden CPM on `similarity` weights, cluster metrics from the bipartite matrix) while evolution tracking stays untouched. `db.py` gains `RunMetadata`/`insert_run` and extends `insert_clusters`. `main.py`'s `run_cycle` is rewritten around the new path and always writes a run row — including on empty/no-knee days. Removals (`PairRow`, `build_graph`, `fetch_pairs*`, `min_edge_weight`, `min_cosharers`, `pairs_table`) land last so every commit stays green.

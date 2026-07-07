@@ -1,5 +1,7 @@
 # Test Requirements — Density-Based Dismantling for URL Co-Sharing (2026-07-06)
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 Traces every acceptance criterion in `docs/design-plans/2026-07-06-density-dismantling.md`
 (`density-dismantling.AC1.1` … `density-dismantling.AC4.3`) to the automated test that pins it
 and/or the human verification that closes the gap CI cannot.

@@ -1,5 +1,7 @@
 # Density-Dismantling Implementation Plan — Phase 2: Bipartite data access
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 **Goal:** Fetch filtered `(did, url, share_count)` rows for the rolling window directly from `osprey_execution_results`, with the activity and document-frequency filters pushed into SQL CTEs.
 
 **Architecture:** `queries.py` gains a pure string-builder `fetch_url_shares_query` (Functional Core); `db.py` gains a typed `fetch_url_shares` method (Imperative Shell). The `UrlShareRow` type is seeded into a new Core module `similarity.py` so that Shell imports Core (same direction as `db.py`'s existing `PairRow` import from `analyzer.py`) — Phase 3 fills in the rest of `similarity.py`.

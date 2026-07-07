@@ -83,7 +83,6 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
         rows,
         analysis.min_unique_urls,
         analysis.min_url_sharers,
-        analysis.max_url_df_fraction,
         analysis.edge_epsilon,
         logger,
     )

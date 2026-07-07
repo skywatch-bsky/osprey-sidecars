@@ -1,5 +1,7 @@
 # TF-IDF Similarity Network + Density-Based Dismantling for URL Co-Sharing Design
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 ## Summary
 
 This design replaces `url_cosharing`'s current detection pipeline — pre-aggregated co-share pairs fed into a Newman-weighted graph, then clustered with Leiden — with a methodology adapted from a peer-reviewed coordinated-inauthentic-behaviour paper (Cinus et al., WWW '25). The new pipeline builds a similarity network directly from raw per-account URL-sharing activity: each account becomes a TF-IDF-weighted vector over the URLs it shared in a rolling 7-day window, and cosine similarity between these vectors defines edge weights in a graph. Because this requires per-account vectors and corpus-wide document frequencies that can't be reconstructed from already-aggregated pairs, the sidecar switches its data source from the `url_cosharing_pairs` materialized view to querying `osprey_execution_results` directly (the pairs MV stays alive for other tooling).

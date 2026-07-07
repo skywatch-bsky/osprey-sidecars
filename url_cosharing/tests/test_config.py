@@ -290,6 +290,13 @@ class TestAnalysisConfig:
         with pytest.raises(ValueError, match='must be in'):
             AnalysisConfig.from_env()
 
+    def test_renamed_env_var_rejected_loudly(self, monkeypatch) -> None:
+        """The old percentile env var must fail fast, not be silently ignored."""
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '0.90')
+
+        with pytest.raises(ValueError, match='renamed to URL_COSHARING_MAX_URL_DF_FRACTION'):
+            AnalysisConfig.from_env()
+
     def test_edge_epsilon_too_high_raises_error(self, monkeypatch) -> None:
         monkeypatch.setenv('URL_COSHARING_EDGE_EPSILON', '1.5')
 

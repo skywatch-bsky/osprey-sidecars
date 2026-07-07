@@ -75,6 +75,13 @@ class AnalysisConfig:
 
     @classmethod
     def from_env(cls) -> AnalysisConfig:
+        if 'URL_COSHARING_MAX_URL_DF_PCTL' in os.environ:
+            raise ValueError(
+                'URL_COSHARING_MAX_URL_DF_PCTL was renamed to '
+                'URL_COSHARING_MAX_URL_DF_FRACTION with new semantics: the value is '
+                'now a fraction of distinct accounts (sklearn max_df), not a '
+                'percentile of the URL df distribution. Update the environment.'
+            )
         return cls(
             interval_seconds=int(os.environ.get('URL_COSHARING_INTERVAL_SECONDS', '3600')),
             resolution=float(os.environ.get('URL_COSHARING_RESOLUTION', '0.05')),

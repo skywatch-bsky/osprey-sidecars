@@ -1,5 +1,7 @@
 # Density-Dismantling Implementation Plan — Phase 3: Similarity network core
 
+> **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+
 **Goal:** Pure Functional Core turning `(did, url, share_count)` rows into a TF-IDF cosine-similarity igraph network, with in-Python re-application of the activity/df filters (defense in depth over the SQL prefilter).
 
 **Architecture:** All new code goes in `similarity.py` (`# pattern: Functional Core`, seeded with `UrlShareRow` in Phase 2) — no I/O, no ClickHouse imports, loggers permitted. scipy sparse arrays (`csr_array`) hold the account×URL matrix; TF-IDF is hand-rolled (no sklearn); cosine similarity is a sparse matrix product; the result is an undirected igraph graph with a `similarity` edge attribute.
