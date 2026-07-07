@@ -41,20 +41,39 @@ def _empty_result(surface: tuple[GridCell, ...], guardrail_triggered: bool) -> D
     )
 
 
+def _component_centralities(graph: ig.Graph) -> np.ndarray:
+    """Eigenvector centrality computed independently per connected component.
+
+    On disconnected input, igraph's ARPACK solver assigns real centralities only
+    to the max-eigenvalue component; vertices in other components receive numerical
+    noise (~1e-17 scale, unrelated to graph structure). Computing on each component's
+    induced subgraph instead gives every component centralities scaled to max=1.0,
+    so quantile thresholds treat equally dense components equally and partitioning
+    stays deterministic.
+    """
+    centralities = np.zeros(graph.vcount(), dtype=np.float64)
+    for component in graph.connected_components():
+        sub = graph.induced_subgraph(component)
+        if sub.ecount() == 0:
+            continue
+        # igraph warns about "nearly zero" centralities as a possible sign of a
+        # disconnected graph. Each subgraph here is a connected component, so
+        # near-zero values are genuine structural decay (e.g. long weak chains),
+        # not a disconnectedness artifact.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='.*nearly zero.*')
+            centralities[component] = sub.eigenvector_centrality(weights='similarity', scale=True)
+    return centralities
+
+
 def _apply_thresholds(
     graph: ig.Graph,
     centralities: list[float],
     edge_threshold: float,
     centrality_threshold: float,
 ) -> ig.Graph:
-    # Collapse the ARPACK eigenvector-centrality noise band on disconnected graphs.
-    # On disconnected input, igraph's ARPACK solver computes per-component eigenvector
-    # centrality, normalizing each component to max=1.0 separately. Noise-band centralities
-    # on non-max components fall in the ~1.7e-18 range (unrelated to graph structure).
-    # Quantile-based thresholding on noisy values causes non-deterministic partitioning.
-    # This tolerance (1e-10) is safely below the smallest gap between meaningful
-    # centralities (>1e-3 after renormalization) yet above noise, enabling deterministic
-    # >= partitioning.
+    # Guard against float representation differences between np.quantile output and
+    # vertex centralities so >= partitioning at grid boundaries is deterministic.
     tolerance = 1e-10
     keep = [
         idx
@@ -87,41 +106,15 @@ def dismantle(
     with automated threshold selection by knee detection on the
     minimum-component-density surface.
 
-    Eigenvector centrality is computed once on the full graph. For disconnected
-    graphs, centralities are renormalized per-component to ensure deterministic
-    quantile-based thresholding, eliminating ARPACK numerical noise (~1e-17 scale)
-    from smaller components that would otherwise cause non-deterministic partitioning.
+    Eigenvector centrality is computed independently per connected component, each
+    scaled to max=1.0, so disconnected graphs are thresholded deterministically and
+    equally dense components outside the max-eigenvalue component are not dropped.
     """
     if graph.vcount() == 0 or graph.ecount() == 0:
         return _empty_result(surface=(), guardrail_triggered=False)
 
-    # Suppress igraph's "nearly zero centralities" warning for disconnected graphs;
-    # we renormalize per-component below to eliminate noise.
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', message='.*nearly zero.*')
-        centralities = graph.eigenvector_centrality(weights='similarity', scale=True)
-
-    # Handle disconnected graphs by using only the max-eigenvalue component for
-    # quantile-based thresholding. On disconnected graphs, igraph computes eigenvector
-    # centrality as: max-eigenvalue component gets real centralities scaled to max=1.0,
-    # other components get numerical noise (~1e-17 scale). These noise values cause
-    # non-deterministic quantile-based partitioning. We compute quantiles from the
-    # max-eigenvalue component only, then apply to the full graph.
-    components = graph.connected_components()
-    centralities_array = np.array(centralities, dtype=np.float64)
-
-    if len(components) > 1:
-        # Find the component with the highest max centrality (the max-eigenvalue component)
-        max_centrality_idx = max(
-            range(len(components)),
-            key=lambda i: np.max(centralities_array[components[i]]) if len(components[i]) > 0 else -1,
-        )
-        # Extract centralities from the max-eigenvalue component for quantile computation
-        max_component_vertices = components[max_centrality_idx]
-        centralities_for_quantile = centralities_array[max_component_vertices]
-    else:
-        # Connected graph: use all centralities
-        centralities_for_quantile = centralities_array
+    centralities_array = _component_centralities(graph)
+    centralities_list = centralities_array.tolist()
 
     edge_similarities = np.array(graph.es['similarity'])
 
@@ -134,8 +127,8 @@ def dismantle(
     for i, eq in enumerate(edge_quantile_grid):
         edge_threshold = float(np.quantile(edge_similarities, eq))
         for j, cq in enumerate(centrality_quantile_grid):
-            centrality_threshold = float(np.quantile(centralities_for_quantile, cq))
-            sub = _apply_thresholds(graph, centralities_array.tolist(), edge_threshold, centrality_threshold)
+            centrality_threshold = float(np.quantile(centralities_array, cq))
+            sub = _apply_thresholds(graph, centralities_list, edge_threshold, centrality_threshold)
             density[i, j] = _min_component_density(sub)
             subgraphs[(i, j)] = sub
             cells.append(

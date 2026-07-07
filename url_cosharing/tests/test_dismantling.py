@@ -422,6 +422,50 @@ class TestDismantleNoTransition:
             assert cell1.min_component_density == cell2.min_component_density
 
 
+    def test_disconnected_equal_components_both_recovered(self):
+        """Two equally dense cliques in separate components must both survive.
+
+        Regression test: quantile thresholds computed from only the max-eigenvalue
+        component would assign noise centralities to the other component and drop
+        it entirely, silently missing a second coordinated campaign.
+        """
+        # Two disjoint copies of the same structure: a 6-clique at 0.9 with a
+        # 10-node chain at 0.2 attached via a 0.1 bridge.
+        graph = ig.Graph(n=32)
+        names = []
+        edges = []
+        weights = []
+        for prefix, offset in (('a', 0), ('b', 16)):
+            names.extend([f'{prefix}_core{i}' for i in range(6)])
+            names.extend([f'{prefix}_bg{i}' for i in range(10)])
+            for i in range(6):
+                for j in range(i + 1, 6):
+                    edges.append((offset + i, offset + j))
+                    weights.append(0.9)
+            for i in range(9):
+                edges.append((offset + 6 + i, offset + 6 + i + 1))
+                weights.append(0.2)
+            edges.append((offset, offset + 6))
+            weights.append(0.1)
+        graph.vs['name'] = names
+        graph.add_edges(edges)
+        graph.es['similarity'] = weights
+
+        result = dismantle(
+            graph,
+            edge_quantile_grid=tuple(np.linspace(0.5, 0.99, 7)),
+            centrality_quantile_grid=tuple(np.linspace(0.5, 0.99, 7)),
+            density_floor=0.5,
+            max_flagged_fraction=0.5,
+            min_cluster_size=3,
+        )
+
+        assert result.knee_found is True
+        expected = {f'a_core{i}' for i in range(6)} | {f'b_core{i}' for i in range(6)}
+        surviving_names = {v['name'] for v in result.core.vs}
+        assert surviving_names == expected
+
+
 class TestDismantleGuardrails:
     """Tests for guardrail rejection of candidates (AC2.4)."""
 
