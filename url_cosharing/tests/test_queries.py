@@ -134,6 +134,36 @@ class TestFetchMemberTimestampsQuery:
         query = fetch_member_timestamps_query(base_config, "'did:plc:abc'")
         assert 'yesterday()' in query
 
+    def test_window_bounds_match_detection_window(self, base_config: AnalysisConfig) -> None:
+        """Timestamp metrics must cover the same rolling window as detection."""
+        query = fetch_member_timestamps_query(base_config, "'did:plc:abc'")
+        assert 'yesterday() - 6' in query
+        assert '<= yesterday()' in query
+
+    def test_window_bounds_with_custom_window_days(self) -> None:
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_cluster_size=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=3,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+        )
+        query = fetch_member_timestamps_query(config, "'did:plc:abc'")
+        assert 'yesterday() - 2' in query
+
     def test_includes_placeholder_in_where_clause(self, base_config: AnalysisConfig) -> None:
         placeholder = "'did:plc:abc','did:plc:def'"
         query = fetch_member_timestamps_query(base_config, placeholder)

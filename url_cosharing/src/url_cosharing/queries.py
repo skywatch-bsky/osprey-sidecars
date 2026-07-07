@@ -67,7 +67,8 @@ def fetch_member_timestamps_query(config: AnalysisConfig, dids_placeholder: str)
         FROM {config.source_table}
         WHERE Collection = 'app.bsky.feed.post'
             AND OperationKind = 'create'
-            AND toDate(__timestamp) = yesterday()
+            AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
+            AND toDate(__timestamp) <= yesterday()
             AND UserId IN ({dids_placeholder})
         ORDER BY did, ts
     """
