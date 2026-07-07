@@ -89,8 +89,8 @@ Purpose: validates AC2.3's live behaviour — a day with data but no density tra
 | Acceptance Criterion | Automated Test | Manual Step |
 |----------------------|----------------|-------------|
 | AC1.1 | `test_queries.py::TestFetchUrlSharesQuery`, `test_db.py::TestFetchUrlShares`, `test_main.py::TestRunCycle` | H3 step 2 (production read) |
-| AC1.2 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestFilterShares` | — |
-| AC1.3 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestFilterShares` | — |
+| AC1.2 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestSqlFinalRowsNotRefiltered` | — |
+| AC1.3 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestSqlFinalRowsNotRefiltered` | — |
 | AC1.4 | `test_similarity.py::TestTfidfTransform`, `TestBuildSimilarityGraph` | — |
 | AC1.5 | `test_similarity.py::TestSimilarityNetwork`/`TestBuildShareMatrix`, `test_dismantling.py::TestDismantleNoTransition`, `test_main.py` (empty) | H1 + H3; E2E "Empty/fully-filtered day" |
 | AC2.1 | `test_dismantling.py::TestDismantleSurface` | — |

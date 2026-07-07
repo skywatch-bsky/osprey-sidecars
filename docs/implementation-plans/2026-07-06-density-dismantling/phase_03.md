@@ -1,6 +1,8 @@
 # Density-Dismantling Implementation Plan — Phase 3: Similarity network core
 
 > **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+>
+> **Also superseded (2026-07-07, PR #2 review):** the "defense in depth" premise of this phase — re-applying the SQL prefilters in Python (`filter_shares`, Task 2) — is wrong and the function was removed. SQL computes eligibility single-pass over the raw window population; its output can legitimately contain accounts with fewer surviving URLs than `min_unique_urls` and URLs with fewer surviving sharers than `min_url_sharers`, so any re-check over SQL-final rows erases valid detections. `fetch_url_shares_query` is the sole filtering authority and `similarity_network` consumes its output unfiltered. Do not implement Task 2 or its tests from this document.
 
 **Goal:** Pure Functional Core turning `(did, url, share_count)` rows into a TF-IDF cosine-similarity igraph network, with in-Python re-application of the activity/df filters (defense in depth over the SQL prefilter).
 

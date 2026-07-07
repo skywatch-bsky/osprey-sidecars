@@ -1,6 +1,8 @@
 # Test Requirements — Density-Based Dismantling for URL Co-Sharing (2026-07-06)
 
 > **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
+>
+> **Also superseded (2026-07-07, PR #2 review):** the Python defense-in-depth mirror (`filter_shares`) described under AC1.2/AC1.3 was removed entirely. SQL computes eligibility single-pass over the raw window population; its output rows can legitimately fail a naive re-check (an account may retain fewer surviving URLs than `min_unique_urls`, a URL fewer surviving sharers than `min_url_sharers`), so any Python re-filter over SQL-final rows erases valid detections. `fetch_url_shares_query` is the sole filtering authority; `similarity_network` consumes its output unfiltered, pinned by `TestSqlFinalRowsNotRefiltered`. Do not reintroduce Python-side eligibility filtering from this document.
 
 Traces every acceptance criterion in `docs/design-plans/2026-07-06-density-dismantling.md`
 (`density-dismantling.AC1.1` … `density-dismantling.AC4.3`) to the automated test that pins it
@@ -46,28 +48,29 @@ The FakeDb integration test proves the wiring; only live execution proves the re
 | Test type | File | Behaviour pinned |
 |---|---|---|
 | unit (SQL builder) | `url_cosharing/tests/test_queries.py` (`TestFetchUrlSharesQuery`) | `HAVING uniqExact(url) >= 10` present with default config; changing `min_unique_urls` changes the literal. |
-| unit (Python filter) | `url_cosharing/tests/test_similarity.py` (`TestFilterShares`) | `filter_shares` drops an account with 2 unique URLs when `min_unique_urls=3`; keeps an account with exactly 3 (**boundary**). Activity counted over **raw** window rows (single-pass semantics). |
+| unit (no re-filter) | `url_cosharing/tests/test_similarity.py` (`TestSqlFinalRowsNotRefiltered`) | *(Supersedes the planned `TestFilterShares` — see banner.)* `similarity_network` keeps an SQL-final row whose account retains only one surviving URL; the activity floor is enforced by SQL alone. |
 
-**Human verification:** none (fully automated at both SQL and Python layers).
+**Human verification:** none (fully automated: SQL layer pins the filter, Python layer pins its absence).
 
 ---
 
 ### density-dismantling.AC1.3
 > **density-dismantling.AC1.3 Success:** URLs shared by fewer than `min_url_sharers` (default 5) accounts, or with document frequency above the `max_url_df_pctl` (default 0.90) percentile, are excluded before TF-IDF.
 
+*(The ceiling half of this criterion is superseded — see banner. Implemented contract: `df <= max_url_df_fraction * distinct_account_count`, SQL only.)*
+
 **Automated tests:**
 
 | Test type | File | Behaviour pinned |
 |---|---|---|
-| unit (SQL builder) | `url_cosharing/tests/test_queries.py` (`TestFetchUrlSharesQuery`) | `df >= 5` present with default config; df ceiling via the repo idiom — assert `f'quantile({config.max_url_df_pctl})(' in query` (f-string renders `0.90` as `0.9`, so match the formatted value, not a hard literal); overriding `min_url_sharers`/`max_url_df_pctl` moves both. |
-| unit (Python filter) | `url_cosharing/tests/test_similarity.py` (`TestFilterShares`) | **Floor:** URL shared by 1 account dropped at `min_url_sharers=2`, exactly 2 kept (boundary). **Ceiling (hand-computed):** dfs `[1,1,1,1,10]` with `max_url_df_pctl=0.5` → `np.quantile` ceiling `1.0` → df-10 URL dropped, df-1 URLs kept subject to floor. |
+| unit (SQL builder) | `url_cosharing/tests/test_queries.py` (`TestFetchUrlSharesQuery`) | `df >= 5` present with default config; df ceiling as `df <= {config.max_url_df_fraction} * (SELECT uniqExact(did) FROM url_shares)`; overriding `min_url_sharers`/`max_url_df_fraction` moves both. |
+| unit (no re-filter) | `url_cosharing/tests/test_similarity.py` (`TestSqlFinalRowsNotRefiltered`) | *(Supersedes the planned `TestFilterShares` — see banner.)* An SQL-final row whose URL retains a single surviving sharer is kept; a URL shared by every input account is kept (no ceiling recomputed over the prefiltered, smaller population). |
 
-**Rationale note (single-pass):** df is computed over the raw window before any account is dropped, and
-activity before any URL is dropped; both filters then applied together. A `TestFilterShares` regression pin
-asserts an account whose *raw* unique-URL count passes but whose *surviving* URLs number fewer than
-`min_unique_urls` is **still kept** — mirroring the SQL. Python's `np.quantile` (linear interp) and
-ClickHouse's approximate `quantile` may disagree near the ceiling; the Python check is defense-in-depth,
-not an exactness contract, so no cross-engine equality test is required.
+**Rationale note (single-pass, SQL-only):** df is computed over the raw window before any account is
+dropped, and activity before any URL is dropped; both filters are then applied together — in SQL,
+nowhere else. The planned Python defense-in-depth mirror was removed (see banner): because SQL's
+output is post-filter, every recomputation over it — activity, df floor, or ceiling — sees reduced
+counts and can only erase rows SQL correctly kept.
 
 **Human verification:** none.
 
@@ -326,8 +329,8 @@ stats-methodology plan).
 | Acceptance Criterion | Automated test(s) | Manual step |
 |---|---|---|
 | density-dismantling.AC1.1 | `test_queries.py::TestFetchUrlSharesQuery`, `test_db.py::TestFetchUrlShares`, `test_main.py` (FakeDb cycle) | H3 (production read half) |
-| density-dismantling.AC1.2 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestFilterShares` | — |
-| density-dismantling.AC1.3 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestFilterShares` | — |
+| density-dismantling.AC1.2 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestSqlFinalRowsNotRefiltered` | — |
+| density-dismantling.AC1.3 | `test_queries.py::TestFetchUrlSharesQuery`, `test_similarity.py::TestSqlFinalRowsNotRefiltered` | — |
 | density-dismantling.AC1.4 | `test_similarity.py::TestTfidfTransform`, `test_similarity.py::TestBuildSimilarityGraph` | — |
 | density-dismantling.AC1.5 | `test_similarity.py::TestSimilarityNetwork`/`TestBuildShareMatrix`, `test_dismantling.py::TestDismantleNoTransition`, `test_main.py` (empty-input) | H1 + H3 (zero-count row live) |
 | density-dismantling.AC2.1 | `test_dismantling.py::TestDismantleSurface` | — |

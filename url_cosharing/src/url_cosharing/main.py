@@ -79,15 +79,9 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
             'filters (min_url_sharers, max_url_df_fraction)'
         )
 
-    network = similarity_network(
-        rows,
-        analysis.min_unique_urls,
-        analysis.min_url_sharers,
-        analysis.edge_epsilon,
-        logger,
-    )
+    network = similarity_network(rows, analysis.edge_epsilon)
     logger.info(
-        f'similarity network: {network.accounts_eligible}/{network.accounts_raw} accounts, '
+        f'similarity network: {network.accounts_eligible} accounts, '
         f'{network.urls_eligible} urls, {network.graph_edges} edges'
     )
 

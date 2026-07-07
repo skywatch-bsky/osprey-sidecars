@@ -1,7 +1,6 @@
 # pattern: Functional Core
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 import igraph as ig
@@ -28,60 +27,10 @@ class SimilarityNetwork:
     graph: ig.Graph
     matrix: ShareMatrix
     tfidf: csr_array
-    accounts_raw: int  # distinct accounts in the unfiltered input
-    accounts_eligible: int  # distinct accounts after filters
-    urls_eligible: int  # distinct urls after filters
+    accounts_raw: int  # distinct accounts in the input rows (already SQL-filtered)
+    accounts_eligible: int  # distinct accounts in the share matrix
+    urls_eligible: int  # distinct urls in the share matrix
     graph_edges: int
-
-
-def filter_shares(
-    rows: list[UrlShareRow],
-    min_unique_urls: int,
-    min_url_sharers: int,
-    logger: logging.Logger | None = None,
-) -> list[UrlShareRow]:
-    """Re-apply the SQL prefilters in Python (defense in depth).
-
-    Semantics match fetch_url_shares_query: activity and df are both computed
-    over the input rows in a single pass, then applied together.
-
-    The max_url_df_fraction ceiling is deliberately NOT re-applied here. Its
-    denominator is the distinct-account count of the raw sharing population,
-    which only the SQL query sees; rows arriving here are already prefiltered
-    to active accounts, so recomputing the ceiling on them uses a far smaller
-    denominator and can drop URLs that legitimately passed SQL (e.g. a URL
-    shared by most accounts in a large coordination event).
-    """
-    if not rows:
-        return []
-
-    urls_by_did: dict[str, set[str]] = {}
-    dids_by_url: dict[str, set[str]] = {}
-    for row in rows:
-        urls_by_did.setdefault(row.did, set()).add(row.url)
-        dids_by_url.setdefault(row.url, set()).add(row.did)
-
-    active_dids = {did for did, urls in urls_by_did.items() if len(urls) >= min_unique_urls}
-    eligible_urls = {
-        url
-        for url, dids in dids_by_url.items()
-        if len(dids) >= min_url_sharers
-    }
-
-    if not eligible_urls and logger:
-        logger.warning(
-            f'filter_shares: no eligible URLs from {len(dids_by_url)} candidates '
-            f'(min_url_sharers={min_url_sharers}); similarity network will be empty'
-        )
-
-    kept = [row for row in rows if row.did in active_dids and row.url in eligible_urls]
-    if logger:
-        logger.info(
-            f'filter_shares: {len(rows)} rows -> {len(kept)} '
-            f'(accounts {len(urls_by_did)} -> {len({r.did for r in kept})}, '
-            f'urls {len(dids_by_url)} -> {len({r.url for r in kept})})'
-        )
-    return kept
 
 
 def build_share_matrix(rows: list[UrlShareRow]) -> ShareMatrix:
@@ -142,15 +91,21 @@ def build_similarity_graph(tfidf: csr_array, accounts: tuple[str, ...], edge_eps
 
 def similarity_network(
     rows: list[UrlShareRow],
-    min_unique_urls: int,
-    min_url_sharers: int,
     edge_epsilon: float,
-    logger: logging.Logger | None = None,
 ) -> SimilarityNetwork:
-    """End-to-end pipeline: filter, build matrix, TF-IDF, compute similarities."""
+    """End-to-end pipeline: build matrix, TF-IDF, compute similarities.
+
+    Eligibility filtering (activity floor, df floor, df ceiling) is owned
+    entirely by fetch_url_shares_query, which computes all filters in a
+    single pass over the raw rolling-window population and applies them
+    together. Its output can legitimately contain accounts with fewer
+    surviving URLs than min_unique_urls and URLs with fewer surviving
+    sharers than min_url_sharers, so no filter may be recomputed here:
+    re-deriving eligibility from the already-filtered result set uses
+    reduced per-account and per-URL counts and erases valid detections.
+    """
     accounts_raw = len({row.did for row in rows})
-    kept = filter_shares(rows, min_unique_urls, min_url_sharers, logger)
-    matrix = build_share_matrix(kept)
+    matrix = build_share_matrix(rows)
     tfidf = tfidf_transform(matrix.counts)
     graph = build_similarity_graph(tfidf, matrix.accounts, edge_epsilon)
     return SimilarityNetwork(

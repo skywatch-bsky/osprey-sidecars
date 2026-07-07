@@ -52,13 +52,7 @@ def main() -> None:
     try:
         rows = db.fetch_url_shares(fetch_url_shares_query(analysis))
         logger.info(f'fetched {len(rows)} share rows')
-        network = similarity_network(
-            rows,
-            analysis.min_unique_urls,
-            analysis.min_url_sharers,
-            analysis.edge_epsilon,
-            logger,
-        )
+        network = similarity_network(rows, analysis.edge_epsilon)
         result = dismantle(
             network.graph,
             analysis.edge_quantile_grid,

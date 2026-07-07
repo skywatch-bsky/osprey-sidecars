@@ -7,124 +7,61 @@ from url_cosharing.similarity import (
     UrlShareRow,
     build_share_matrix,
     build_similarity_graph,
-    filter_shares,
     similarity_network,
     tfidf_transform,
 )
 
-class TestFilterShares:
-    """Tests for in-Python activity/df filters (AC1.2, AC1.3)."""
 
-    def test_ac12_account_below_min_unique_urls(self):
-        """AC1.2: account with 2 unique URLs dropped when min_unique_urls=3."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-            UrlShareRow(did='a1', url='u2', share_count=1),
-            UrlShareRow(did='a2', url='u3', share_count=1),
-            UrlShareRow(did='a2', url='u4', share_count=1),
-            UrlShareRow(did='a2', url='u5', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
-        # a1 has 2 unique URLs, dropped; a2 has 3, kept
-        assert len(result) == 3
-        assert all(r.did == 'a2' for r in result)
+class TestSqlFinalRowsNotRefiltered:
+    """similarity_network must not re-apply SQL eligibility filters (AC1.2, AC1.3).
 
-    def test_ac12_account_at_min_unique_urls_boundary(self):
-        """AC1.2: account with exactly min_unique_urls is kept."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-            UrlShareRow(did='a1', url='u2', share_count=1),
-            UrlShareRow(did='a1', url='u3', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
-        assert len(result) == 3
-        assert all(r.did == 'a1' for r in result)
+    fetch_url_shares_query computes the activity floor, df floor, and df
+    ceiling in a single pass over the raw rolling-window population, then
+    applies them together. Its output can legitimately contain accounts with
+    fewer surviving URLs than min_unique_urls and URLs with fewer surviving
+    sharers than min_url_sharers; recomputing any filter over that output
+    uses reduced counts and erases valid detections.
+    """
 
-    def test_ac13_url_below_min_sharers(self):
-        """AC1.3: URL shared by 1 account dropped when min_url_sharers=2."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),  # only a1
-            UrlShareRow(did='a2', url='u2', share_count=1),
-            UrlShareRow(did='a2', url='u3', share_count=1),  # a2 and a3
-            UrlShareRow(did='a3', url='u3', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
-        # u1 has df=1, dropped; u2 has df=1, dropped; u3 has df=2, kept
-        assert len(result) == 2
-        assert all(r.url == 'u3' for r in result)
+    def test_account_with_single_surviving_url_is_kept(self):
+        # Raw window: a1 shares u1, u2, u3 (passes min_unique_urls=3); u1 has
+        # df=2 via a1 and a2 (passes min_url_sharers=2); u2, u3 have df=1
+        # (dropped); a2 has 1 unique URL (dropped). SQL's final output is a
+        # single row, a1/u1 — an activity re-check (1 URL < 3) or a df
+        # re-check (1 sharer < 2) would wrongly erase it.
+        sql_final = [UrlShareRow(did='a1', url='u1', share_count=1)]
 
-    def test_ac13_url_at_min_sharers_boundary(self):
-        """AC1.3: URL with exactly min_url_sharers is kept."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-            UrlShareRow(did='a2', url='u1', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
-        assert len(result) == 2
-        assert all(r.url == 'u1' for r in result)
+        result = similarity_network(sql_final, edge_epsilon=0.0)
 
-    def test_no_df_ceiling_reapplied_after_prefilter(self):
-        """The df ceiling is SQL-only: a URL shared by every account in the
-        (already prefiltered) input must survive.
+        assert result.accounts_eligible == 1
+        assert result.urls_eligible == 1
+        assert result.graph.vcount() == 1
 
-        Rows arriving here have been reduced to active accounts by SQL, so a
-        fraction-of-accounts ceiling recomputed on them uses the wrong, much
-        smaller denominator and would drop legitimately hot coordination URLs."""
+    def test_url_shared_by_every_input_account_is_kept(self):
+        # A df ceiling recomputed over prefiltered rows uses the active-account
+        # count as denominator instead of the raw sharing population and would
+        # drop a legitimately hot coordination URL shared by everyone.
         rows = [UrlShareRow(did=f'a{i}', url='hot', share_count=1) for i in range(10)]
         rows += [UrlShareRow(did=f'a{i}', url=f'u{i}', share_count=1) for i in range(10)]
-        result = filter_shares(rows, min_unique_urls=1, min_url_sharers=2)
-        kept_urls = {r.url for r in result}
-        assert 'hot' in kept_urls
 
-    def test_empty_eligible_urls_warns(self, caplog):
-        """When no URL passes eligibility, a warning is logged."""
-        import logging
+        result = similarity_network(rows, edge_epsilon=0.0)
 
+        assert 'hot' in result.matrix.urls
+        assert result.accounts_eligible == 10
+        assert result.urls_eligible == 11
+
+    def test_all_input_rows_reach_the_matrix(self):
+        # No row of SQL's output may be dropped, whatever its shape.
         rows = [
             UrlShareRow(did='a1', url='u1', share_count=1),
             UrlShareRow(did='a2', url='u2', share_count=1),
         ]
-        logger = logging.getLogger('test_filter_shares')
-        with caplog.at_level(logging.WARNING, logger='test_filter_shares'):
-            result = filter_shares(rows, min_unique_urls=1, min_url_sharers=5, logger=logger)
 
-        assert result == []
-        assert any('no eligible URLs' in record.message for record in caplog.records)
+        result = similarity_network(rows, edge_epsilon=0.0)
 
-    def test_single_pass_semantics(self):
-        """Account survives with fewer remaining URLs than min_unique_urls (SQL mirror).
-
-        This is the critical regression test: activity and df are computed
-        over the input rows, then filters applied together in one pass.
-        """
-        # a1 shares u1 (df=2, kept) plus u2 and u3 (df=1, dropped by the floor).
-        # a1's raw unique count is 3 >= 3, so a1 stays active even though only
-        # one of its URLs survives the df floor.
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-            UrlShareRow(did='a1', url='u2', share_count=1),
-            UrlShareRow(did='a1', url='u3', share_count=1),
-            UrlShareRow(did='a2', url='u1', share_count=1),
-        ]
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=2)
-        assert result == [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-        ]
-
-    def test_empty_input(self):
-        """Empty input returns empty."""
-        result = filter_shares([], min_unique_urls=1, min_url_sharers=1)
-        assert result == []
-
-    def test_fully_filtered_input(self):
-        """Fully filtered input (all rows dropped) returns empty."""
-        rows = [
-            UrlShareRow(did='a1', url='u1', share_count=1),
-            UrlShareRow(did='a1', url='u2', share_count=1),
-        ]
-        # min_unique_urls=3 drops a1 (has 2 URLs)
-        result = filter_shares(rows, min_unique_urls=3, min_url_sharers=1)
-        assert result == []
+        assert result.accounts_eligible == 2
+        assert result.urls_eligible == 2
+        assert result.matrix.counts.sum() == 2
 
 class TestBuildShareMatrix:
     """Tests for sparse account-by-url share matrix."""
@@ -369,13 +306,7 @@ class TestSimilarityNetwork:
             UrlShareRow(did='a3', url='u3', share_count=1),  # df=1 (only a3)
         ]
 
-        result = similarity_network(
-            rows=rows,
-            min_unique_urls=1,
-            min_url_sharers=1,
-
-            edge_epsilon=0.0,
-        )
+        result = similarity_network(rows=rows, edge_epsilon=0.0)
 
         assert result.accounts_raw == 3
         assert result.accounts_eligible == 3
@@ -387,13 +318,7 @@ class TestSimilarityNetwork:
 
     def test_ac15_empty_input(self):
         """AC1.5: empty input → empty graph, zero counts, no error."""
-        result = similarity_network(
-            rows=[],
-            min_unique_urls=1,
-            min_url_sharers=1,
-
-            edge_epsilon=0.0,
-        )
+        result = similarity_network(rows=[], edge_epsilon=0.0)
 
         assert result.accounts_raw == 0
         assert result.accounts_eligible == 0
@@ -401,23 +326,17 @@ class TestSimilarityNetwork:
         assert result.graph.vcount() == 0
         assert result.graph.ecount() == 0
 
-    def test_ac15_fully_filtered_input(self):
-        """AC1.5: non-empty but fully filtered → accounts_raw > 0, eligible = 0, empty graph."""
+    def test_ac15_disjoint_accounts_form_no_edges(self):
+        """AC1.5: accounts with no shared URLs → vertices present, zero edges."""
         rows = [
             UrlShareRow(did='a1', url='u1', share_count=1),
             UrlShareRow(did='a2', url='u2', share_count=1),
         ]
 
-        result = similarity_network(
-            rows=rows,
-            min_unique_urls=3,  # Both accounts have only 1 URL, will be filtered
-            min_url_sharers=1,
-
-            edge_epsilon=0.0,
-        )
+        result = similarity_network(rows=rows, edge_epsilon=0.0)
 
         assert result.accounts_raw == 2
-        assert result.accounts_eligible == 0
-        assert result.urls_eligible == 0
-        assert result.graph.vcount() == 0
+        assert result.accounts_eligible == 2
+        assert result.urls_eligible == 2
+        assert result.graph.vcount() == 2
         assert result.graph.ecount() == 0
