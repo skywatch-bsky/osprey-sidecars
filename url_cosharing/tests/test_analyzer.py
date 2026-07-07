@@ -592,22 +592,36 @@ class TestClusterCore:
         assert results2[0].subgraph_density == pytest.approx(2 / 3)
 
     def test_cluster_core_sample_urls_ranked_by_tfidf(self) -> None:
-        """AC3.2: sample_urls must include URLs shared by cluster members.
+        """AC3.2: sample_urls ranked by cluster TF-IDF mass, descending.
 
-        Regression test: if sample_urls becomes empty or url1 disappears, the test fails.
-        This catches regressions where URL filtering or ranking breaks.
+        Verifies the np.argsort(-mass, kind='stable') ranking logic.
+        Constructs a fixture where one URL is exclusive to the cluster (high IDF, high mass)
+        and another is shared across cluster and some background accounts (lower IDF, lower mass).
+        Asserts: (1) both URLs present, (2) high_mass_url appears before low_mass_url in sample_urls.
         """
+        # Build a 2-member cluster
         core = ig.Graph(2)
         core.vs['name'] = ['did:0', 'did:1']
         core.add_edges([(0, 1)])
         core.es['similarity'] = [0.9]
 
-        # url1: shared only by cluster members (df=2)
-        # Add a background account with a different URL to make the matrix have nonzero IDF
+        # Fixture: 5 accounts total (2 cluster + 3 background)
+        # exclusive_url: only in cluster members (df=2) => high IDF, high within-cluster mass
+        # shared_url: in cluster (2) + some background (2) => df=4, lower TF-IDF but nonzero
         share_rows = [
-            UrlShareRow(did='did:0', url='url1', share_count=1),
-            UrlShareRow(did='did:1', url='url1', share_count=1),
-            UrlShareRow(did='did:bg', url='url_bg', share_count=1),
+            # Cluster members share exclusive_url (df=2)
+            UrlShareRow(did='did:0', url='exclusive_url', share_count=1),
+            UrlShareRow(did='did:1', url='exclusive_url', share_count=1),
+            # Cluster members also share shared_url (df=4)
+            UrlShareRow(did='did:0', url='shared_url', share_count=1),
+            UrlShareRow(did='did:1', url='shared_url', share_count=1),
+            # Background accounts: 2 share shared_url, 1 doesn't
+            UrlShareRow(did='did:bg0', url='shared_url', share_count=1),
+            UrlShareRow(did='did:bg1', url='shared_url', share_count=1),
+            # Each background account gets its own distinct URL
+            UrlShareRow(did='did:bg0', url='bg_url0', share_count=1),
+            UrlShareRow(did='did:bg1', url='bg_url1', share_count=1),
+            UrlShareRow(did='did:bg2', url='bg_url2', share_count=1),
         ]
         matrix = build_share_matrix(share_rows)
         tfidf = tfidf_transform(matrix.counts)
@@ -616,9 +630,18 @@ class TestClusterCore:
 
         assert len(results) == 1
         sample_urls = results[0].sample_urls
-        # Regression test: url1 must be present (unconditional assertion)
-        # If the method drops url1 due to a bug, the test fails
-        assert 'url1' in sample_urls, "url1 must be in sample_urls (regression test for URL filtering)"
+
+        # Unconditional assertion: both URLs must be present
+        assert 'exclusive_url' in sample_urls, "exclusive_url must be in sample_urls"
+        assert 'shared_url' in sample_urls, "shared_url must be in sample_urls"
+
+        # Unconditional assertion: high_mass_url ranks before low_mass_url
+        exclusive_idx = sample_urls.index('exclusive_url')
+        shared_idx = sample_urls.index('shared_url')
+        assert exclusive_idx < shared_idx, (
+            f"exclusive_url (high TF-IDF mass) must rank before shared_url (low mass); "
+            f"got indices {exclusive_idx} and {shared_idx}"
+        )
 
     def test_cluster_core_sample_urls_no_zeros(self) -> None:
         """AC3.2: Zero-mass URLs never appear in sample_urls."""
