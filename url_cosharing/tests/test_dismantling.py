@@ -55,6 +55,51 @@ def planted_core_graph() -> ig.Graph:
     return graph
 
 
+def two_plateau_graph() -> ig.Graph:
+    """Build a two-plateau synthetic graph for testing AC2.4 fallback path.
+
+    Large group (l0..l14): 15 nodes, ring at similarity 0.55, moderate density (~0.2).
+    Small group (s0..s4): 5 nodes, complete clique at similarity 0.95, density 1.0.
+    Bridges (2 edges at 0.60) connect the groups to keep the graph connected.
+
+    The surface has a clear plateau structure:
+    - At low/medium thresholds: both groups survive with density ~0.25-0.95
+    - At high edge threshold: only the small group survives with density 1.0
+
+    When guardrails are set (e.g. max_flagged_fraction=0.30), the largest-jump
+    candidate (7-node mixed subgraph, density 0.95) is rejected by the guardrail,
+    then a next-best candidate (5-node pure small group, density 1.0) passes all
+    guards. This exercises the fallback path in AC2.4.
+    """
+    graph = ig.Graph(n=20)
+    graph.vs['name'] = [f'l{i}' for i in range(15)] + [f's{i}' for i in range(5)]
+
+    edges = []
+    weights = []
+
+    # Large group: ring at 0.55
+    for i in range(15):
+        edges.append((i, (i + 1) % 15))
+        weights.append(0.55)
+
+    # Small group: complete clique at 0.95
+    for i in range(15, 20):
+        for j in range(i + 1, 20):
+            edges.append((i, j))
+            weights.append(0.95)
+
+    # Bridges at 0.60
+    for large_idx in [0, 7]:
+        for small_idx in range(5):
+            edges.append((large_idx, 15 + small_idx))
+            weights.append(0.60)
+
+    graph.add_edges(edges)
+    graph.es['similarity'] = weights
+
+    return graph
+
+
 class TestDismantleSurface:
     """Tests for grid surface computation (AC2.1)."""
 
@@ -425,34 +470,34 @@ class TestDismantleGuardrails:
         assert result.knee_found is False
 
     def test_next_best_candidate_after_rejection(self):
-        """Construct a graph where guardrail rejects best candidate and next-best is selected."""
-        # Strategy: Use the planted_core_graph() (38 vertices, 8-node core).
-        # Apply guardrails to force rejection of the best candidate, then verify
-        # that a next-best candidate (if one exists that passes floor + guardrails) is selected.
-        graph = planted_core_graph()
+        """AC2.4: Guardrail rejects largest-jump candidate; next-best candidate is selected.
 
-        # With a moderate cap that rejects the 8-node core:
-        # max_flagged_fraction=0.18 → cap ≈ 6.8 nodes (rejects core at 8 nodes)
-        # density_floor=0.8 → requires high density
-        # Most cells will fail either the floor or the guardrail.
-        # We construct parameters such that at least one cell passes.
+        Uses two_plateau_graph(): large group's density plateau is ranked first with
+        biggest jump, but guardrails reject it (exceeds max_flagged_fraction). The small
+        group's plateau (fewer survivors, density 1.0) is then evaluated and accepted.
+        """
+        graph = two_plateau_graph()
+
+        # Parameters chosen to:
+        # 1. Make the large-group plateau (7 survivors) the largest-jump candidate
+        # 2. Reject it with max_flagged_fraction=0.30 (cap ≈ 6 nodes < 7)
+        # 3. Accept the small-group plateau (5 survivors, density 1.0) as next-best
         result = dismantle(
             graph,
-            edge_quantile_grid=(0.5, 0.7, 0.9),
-            centrality_quantile_grid=(0.5, 0.7, 0.9),
+            edge_quantile_grid=(0.2, 0.6, 0.92),
+            centrality_quantile_grid=(0.2, 0.7, 0.95),
             density_floor=0.5,
-            max_flagged_fraction=0.18,  # cap ≈ 6.8 nodes
+            max_flagged_fraction=0.30,  # cap ≈ 6 nodes
             min_cluster_size=2,
         )
 
-        # guardrail_triggered must be True (best candidate was rejected)
+        # Unconditional assertions per AC2.4 requirement:
+        # - Large-group candidate was rejected, so guardrail_triggered must be True
         assert result.guardrail_triggered is True
-        # Either knee_found is True (a next-best candidate passed) or False (none passed)
-        # but guardrail_triggered confirms at least one floor-passing candidate was rejected
-        if result.knee_found:
-            # Verify the selected core fits the guardrails
-            assert result.core.vcount() <= int(0.18 * graph.vcount())
-            assert result.core.vcount() >= 2
+        # - Small-group candidate passed, so knee_found must be True
+        assert result.knee_found is True
+        # - Core must be exactly the small group (s0..s4)
+        assert set(result.core.vs['name']) == {'s0', 's1', 's2', 's3', 's4'}
 
 
 class TestDismantleFull:

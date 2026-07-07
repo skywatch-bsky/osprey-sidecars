@@ -47,10 +47,14 @@ def _apply_thresholds(
     edge_threshold: float,
     centrality_threshold: float,
 ) -> ig.Graph:
-    # Use a small tolerance when comparing floating-point centrality thresholds
-    # to avoid non-deterministic partitioning due to rounding artifacts.
-    # With quantile-based thresholds computed from subsets of centralities,
-    # we need to ensure consistent comparisons even when values are numerically close.
+    # Collapse the ARPACK eigenvector-centrality noise band on disconnected graphs.
+    # On disconnected input, igraph's ARPACK solver computes per-component eigenvector
+    # centrality, normalizing each component to max=1.0 separately. Noise-band centralities
+    # on non-max components fall in the ~1.7e-18 range (unrelated to graph structure).
+    # Quantile-based thresholding on noisy values causes non-deterministic partitioning.
+    # This tolerance (1e-10) is safely below the smallest gap between meaningful
+    # centralities (>1e-3 after renormalization) yet above noise, enabling deterministic
+    # >= partitioning.
     tolerance = 1e-10
     keep = [
         idx
