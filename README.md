@@ -21,7 +21,7 @@ No sidecar imports from `osprey_worker` or from any other sidecar.
 | [signup_anomaly](signup_anomaly/) | Anomalous PDS signup spikes | Negative binomial / Poisson on dense median baselines, BH-FDR | `pds_signup_anomalies` |
 | [url_overdispersion](url_overdispersion/) | Anomalous domain sharing | NB volume + beta-binomial density, BH-FDR per signal | `url_overdispersion_results` |
 | [quote_overdispersion](quote_overdispersion/) | Anomalous quote-post concentration | NB volume + beta-binomial density, BH-FDR per signal | `quote_overdispersion_results` |
-| [url_cosharing](url_cosharing/) | Coordinated URL sharing | Leiden (CPM) on Newman-weighted co-sharing graph | `url_cosharing_clusters` |
+| [url_cosharing](url_cosharing/) | Coordinated URL sharing | TF-IDF cosine-similarity network + density-based dismantling, Leiden (CPM) on the coordinated core | `url_cosharing_clusters` |
 | [quote_cosharing](quote_cosharing/) | Coordinated quote-posting | Leiden (CPM) on Newman-weighted co-sharing graph | `quote_cosharing_clusters` |
 
 ## Requirements
