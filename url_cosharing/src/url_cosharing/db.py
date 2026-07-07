@@ -68,6 +68,15 @@ class CosharingDb:
             )
         return rows
 
+    def fetch_raw_account_count(self, query: str) -> int:
+        result = self._client.query(
+            query,
+            settings={'max_execution_time': 300},
+        )
+        if not result.result_rows:
+            return 0
+        return int(result.result_rows[0][0])
+
     def fetch_historical_membership(self, query: str) -> list[MembershipRow]:
         result = self._client.query(
             query,

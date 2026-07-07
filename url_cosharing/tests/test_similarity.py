@@ -308,7 +308,6 @@ class TestSimilarityNetwork:
 
         result = similarity_network(rows=rows, edge_epsilon=0.0)
 
-        assert result.accounts_raw == 3
         assert result.accounts_eligible == 3
         assert result.urls_eligible == 3
         assert result.graph.vcount() == 3
@@ -320,7 +319,6 @@ class TestSimilarityNetwork:
         """AC1.5: empty input → empty graph, zero counts, no error."""
         result = similarity_network(rows=[], edge_epsilon=0.0)
 
-        assert result.accounts_raw == 0
         assert result.accounts_eligible == 0
         assert result.urls_eligible == 0
         assert result.graph.vcount() == 0
@@ -335,7 +333,6 @@ class TestSimilarityNetwork:
 
         result = similarity_network(rows=rows, edge_epsilon=0.0)
 
-        assert result.accounts_raw == 2
         assert result.accounts_eligible == 2
         assert result.urls_eligible == 2
         assert result.graph.vcount() == 2

@@ -27,7 +27,6 @@ class SimilarityNetwork:
     graph: ig.Graph
     matrix: ShareMatrix
     tfidf: csr_array
-    accounts_raw: int  # distinct accounts in the input rows (already SQL-filtered)
     accounts_eligible: int  # distinct accounts in the share matrix
     urls_eligible: int  # distinct urls in the share matrix
     graph_edges: int
@@ -104,7 +103,6 @@ def similarity_network(
     re-deriving eligibility from the already-filtered result set uses
     reduced per-account and per-URL counts and erases valid detections.
     """
-    accounts_raw = len({row.did for row in rows})
     matrix = build_share_matrix(rows)
     tfidf = tfidf_transform(matrix.counts)
     graph = build_similarity_graph(tfidf, matrix.accounts, edge_epsilon)
@@ -112,7 +110,6 @@ def similarity_network(
         graph=graph,
         matrix=matrix,
         tfidf=tfidf,
-        accounts_raw=accounts_raw,
         accounts_eligible=len(matrix.accounts),
         urls_eligible=len(matrix.urls),
         graph_edges=graph.ecount(),

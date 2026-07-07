@@ -537,3 +537,49 @@ class TestInsertRun:
         assert row_data[10] is False  # guardrail_triggered
         assert row_data[11] == 10  # flagged_accounts
         assert row_data[12] == 3  # cluster_count
+
+
+class TestFetchRawAccountCount:
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_returns_scalar_count_as_int(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        mock_result = Mock()
+        mock_result.result_rows = [(225000,)]
+        mock_client.query.return_value = mock_result
+
+        db = CosharingDb(config)
+        count = db.fetch_raw_account_count('SELECT uniqExact(UserId) FROM t')
+
+        assert count == 225000
+        assert isinstance(count, int)
+        call_kwargs = mock_client.query.call_args.kwargs
+        assert call_kwargs.get('settings') == {'max_execution_time': 300}
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_empty_result_returns_zero(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        mock_result = Mock()
+        mock_result.result_rows = []
+        mock_client.query.return_value = mock_result
+
+        db = CosharingDb(config)
+
+        assert db.fetch_raw_account_count('SELECT uniqExact(UserId) FROM t') == 0

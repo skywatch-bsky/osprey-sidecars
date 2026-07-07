@@ -17,6 +17,7 @@ class FakeDb:
 
     def __init__(self) -> None:
         self.url_shares: list[UrlShareRow] = []
+        self.raw_account_count: int = 0
         self.membership_rows: list[MembershipRow] = []
         self.timestamp_rows: list[MemberTimestamp] = []
         self.captured_clusters: list[tuple[date, TimestampedCluster, EvolutionEvent]] = []
@@ -27,6 +28,10 @@ class FakeDb:
     def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
         """Returns pre-configured URL shares."""
         return self.url_shares
+
+    def fetch_raw_account_count(self, query: str) -> int:
+        """Returns the pre-configured raw window account count."""
+        return self.raw_account_count
 
     def fetch_historical_membership(self, query: str) -> list[MembershipRow]:
         """Returns pre-configured membership rows."""
@@ -243,6 +248,9 @@ class TestRunCycle:
             for hour in [10, 12, 14]:
                 fake_db.timestamp_rows.append(MemberTimestamp(did=account, ts=datetime(2026, 3, 21, hour, 0, 0)))
 
+        # Raw window population exceeds the 10 accounts surviving SQL filters
+        fake_db.raw_account_count = 250
+
         run_cycle(fake_db, app_config)
 
         # Should delete three tables
@@ -264,6 +272,11 @@ class TestRunCycle:
         assert run.knee_found is True
         assert run.cluster_count >= 1
         assert run.flagged_accounts >= 4
+
+        # accounts_raw is the pre-filter window population from its own query,
+        # not the SQL-final row population the network is built from
+        assert run.accounts_raw == 250
+        assert run.accounts_eligible == 10
 
     def test_empty_input_writes_run_metadata(self, app_config: AppConfig) -> None:
         """Empty input: no clusters, run row written with zero counts."""

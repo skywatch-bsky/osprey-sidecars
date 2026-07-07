@@ -34,7 +34,6 @@ class TestFormatSurface:
             graph=graph,
             matrix=matrix,
             tfidf=tfidf,
-            accounts_raw=5,
             accounts_eligible=3,
             urls_eligible=2,
             graph_edges=2,
@@ -67,7 +66,7 @@ class TestFormatSurface:
             surface=surface,
         )
 
-        output = format_surface(network, result)
+        output = format_surface(network, result, accounts_raw=5)
         lines = output.split('\n')
 
         # Verify header present
@@ -104,7 +103,6 @@ class TestFormatSurface:
             graph=graph,
             matrix=matrix,
             tfidf=tfidf,
-            accounts_raw=10,
             accounts_eligible=7,
             urls_eligible=3,
             graph_edges=1,
@@ -130,7 +128,7 @@ class TestFormatSurface:
             surface=surface,
         )
 
-        output = format_surface(network, result)
+        output = format_surface(network, result, accounts_raw=10)
         lines = output.split('\n')
 
         # Second footer line (index 4) should have summary values
@@ -156,7 +154,6 @@ class TestFormatSurface:
             graph=graph,
             matrix=matrix,
             tfidf=tfidf,
-            accounts_raw=0,
             accounts_eligible=0,
             urls_eligible=0,
             graph_edges=0,
@@ -174,7 +171,7 @@ class TestFormatSurface:
             surface=surface,
         )
 
-        output = format_surface(network, result)
+        output = format_surface(network, result, accounts_raw=0)
         lines = output.split('\n')
 
         # Should still have header and footer
@@ -201,7 +198,6 @@ class TestFormatSurface:
             graph=graph,
             matrix=matrix,
             tfidf=tfidf,
-            accounts_raw=1,
             accounts_eligible=1,
             urls_eligible=1,
             graph_edges=0,
@@ -226,7 +222,7 @@ class TestFormatSurface:
             surface=surface,
         )
 
-        output = format_surface(network, result)
+        output = format_surface(network, result, accounts_raw=1)
         lines = output.split('\n')
 
         # Density cell should be formatted to 4 decimals
@@ -248,7 +244,6 @@ class TestFormatSurface:
             graph=graph,
             matrix=matrix,
             tfidf=tfidf,
-            accounts_raw=1,
             accounts_eligible=1,
             urls_eligible=1,
             graph_edges=0,
@@ -265,7 +260,7 @@ class TestFormatSurface:
             surface=surface,
         )
 
-        output = format_surface(network, result)
+        output = format_surface(network, result, accounts_raw=1)
 
         # String should not have trailing \n (caller adds it via sys.stdout.write(...) + '\n')
         assert not output.endswith('\n')

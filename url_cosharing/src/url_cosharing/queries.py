@@ -46,6 +46,25 @@ def fetch_url_shares_query(config: AnalysisConfig) -> str:
     """
 
 
+def fetch_raw_account_count_query(config: AnalysisConfig) -> str:
+    """Distinct accounts in the raw rolling window, before eligibility filters.
+
+    Mirrors the url_shares CTE population in fetch_url_shares_query. Run
+    metadata reports this alongside accounts_eligible to expose stage-count
+    attrition; the main query's final output cannot provide it because its
+    rows are already filtered.
+    """
+    return f"""
+        SELECT uniqExact(UserId)
+        FROM {config.source_table}
+        WHERE Collection = 'app.bsky.feed.post'
+            AND OperationKind = 'create'
+            AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
+            AND toDate(__timestamp) <= yesterday()
+            AND length(FacetLinkList) > 0
+    """
+
+
 def fetch_historical_membership_query(config: AnalysisConfig) -> str:
     return f"""
         SELECT

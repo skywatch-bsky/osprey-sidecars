@@ -18,6 +18,7 @@ from url_cosharing.dismantling import dismantle
 from url_cosharing.queries import (
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
+    fetch_raw_account_count_query,
     fetch_url_shares_query,
 )
 from url_cosharing.similarity import similarity_network
@@ -79,9 +80,11 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
             'filters (min_url_sharers, max_url_df_fraction)'
         )
 
+    accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis))
+
     network = similarity_network(rows, analysis.edge_epsilon)
     logger.info(
-        f'similarity network: {network.accounts_eligible} accounts, '
+        f'similarity network: {network.accounts_eligible}/{accounts_raw} accounts, '
         f'{network.urls_eligible} urls, {network.graph_edges} edges'
     )
 
@@ -164,7 +167,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
         RunMetadata(
             run_date=run_date,
             window_days=analysis.window_days,
-            accounts_raw=network.accounts_raw,
+            accounts_raw=accounts_raw,
             accounts_eligible=network.accounts_eligible,
             urls_eligible=network.urls_eligible,
             graph_edges=network.graph_edges,

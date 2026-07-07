@@ -14,14 +14,14 @@ import sys
 from url_cosharing.config import AppConfig
 from url_cosharing.db import CosharingDb
 from url_cosharing.dismantling import DismantlingResult, dismantle
-from url_cosharing.queries import fetch_url_shares_query
+from url_cosharing.queries import fetch_raw_account_count_query, fetch_url_shares_query
 from url_cosharing.similarity import SimilarityNetwork, similarity_network
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger('url_cosharing.calibrate')
 
 
-def format_surface(network: SimilarityNetwork, result: DismantlingResult) -> str:
+def format_surface(network: SimilarityNetwork, result: DismantlingResult, accounts_raw: int) -> str:
     """Pure formatter: TSV surface plus a summary footer (Functional Core logic
     kept separate so the shell below stays untestable-thin).
     """
@@ -33,7 +33,7 @@ def format_surface(network: SimilarityNetwork, result: DismantlingResult) -> str
         )
     lines.append('')
     lines.append(
-        f'# accounts_raw={network.accounts_raw} accounts_eligible={network.accounts_eligible} '
+        f'# accounts_raw={accounts_raw} accounts_eligible={network.accounts_eligible} '
         f'urls_eligible={network.urls_eligible} graph_edges={network.graph_edges}'
     )
     lines.append(
@@ -52,6 +52,7 @@ def main() -> None:
     try:
         rows = db.fetch_url_shares(fetch_url_shares_query(analysis))
         logger.info(f'fetched {len(rows)} share rows')
+        accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis))
         network = similarity_network(rows, analysis.edge_epsilon)
         result = dismantle(
             network.graph,
@@ -62,7 +63,7 @@ def main() -> None:
             analysis.min_cluster_size,
             logger,
         )
-        sys.stdout.write(format_surface(network, result) + '\n')
+        sys.stdout.write(format_surface(network, result, accounts_raw) + '\n')
     finally:
         db.close()
 

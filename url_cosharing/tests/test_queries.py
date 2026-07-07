@@ -1,10 +1,13 @@
 # pattern: Functional Core
+from dataclasses import replace
+
 import pytest
 
 from url_cosharing.config import AnalysisConfig
 from url_cosharing.queries import (
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
+    fetch_raw_account_count_query,
     fetch_url_shares_query,
     insert_clusters_query,
     insert_membership_query,
@@ -503,3 +506,31 @@ class TestFetchUrlSharesQuery:
         )
         query = fetch_url_shares_query(config)
         assert 'custom_source_table' in query
+
+
+class TestFetchRawAccountCountQuery:
+    def test_counts_distinct_accounts_without_eligibility_filters(self, base_config: AnalysisConfig) -> None:
+        """Run metadata contract: accounts_raw is the pre-filter window population."""
+        query = fetch_raw_account_count_query(base_config)
+        assert 'uniqExact(UserId)' in query
+        assert 'HAVING' not in query
+        assert 'uniqExact(url)' not in query
+        assert 'df' not in query
+
+    def test_mirrors_url_shares_population(self, base_config: AnalysisConfig) -> None:
+        """Same source and row predicates as the url_shares CTE."""
+        query = fetch_raw_account_count_query(base_config)
+        assert 'osprey_execution_results' in query
+        assert "Collection = 'app.bsky.feed.post'" in query
+        assert "OperationKind = 'create'" in query
+        assert 'length(FacetLinkList) > 0' in query
+
+    def test_window_bounds(self, base_config: AnalysisConfig) -> None:
+        query = fetch_raw_account_count_query(base_config)
+        assert 'yesterday() - 6' in query
+        assert '<= yesterday()' in query
+
+    def test_custom_window_days(self, base_config: AnalysisConfig) -> None:
+        config = replace(base_config, window_days=3)
+        query = fetch_raw_account_count_query(config)
+        assert 'yesterday() - 2' in query
