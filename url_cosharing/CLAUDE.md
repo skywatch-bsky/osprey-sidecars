@@ -4,56 +4,46 @@ Last verified: 2026-07-07
 
 ## Purpose
 
-Detects coordinated inauthentic behaviour by identifying clusters of accounts that repeatedly share the same URLs. Builds a similarity network via TF-IDF cosine distance, applies density-based dismantling to isolate dense coordinated cores, runs Leiden CPM on the core with similarity weights, and tracks cluster evolution across days. Reads from `osprey_execution_results` (7-day rolling window), writes cluster results to `url_cosharing_clusters`, membership snapshots to `url_cosharing_membership`, and run metadata to `url_cosharing_runs`.
+Detects coordinated inauthentic behaviour by identifying clusters of accounts that repeatedly share the same URLs. Uses TF-IDF cosine-similarity network over per-account URL-sharing vectors (7-day rolling window) combined with density-based dismantling to isolate a high-precision coordinated core (Cinus, Minici, Luceri & Ferrara, WWW '25), then applies Leiden CPM decomposition to the core. Tracks cluster evolution across days via Jaccard similarity. 
+
+Reads from `osprey_execution_results` (URL share records); `url_cosharing_pairs` is no longer consumed by the sidecar (the materialized view remains for investigation tooling). Writes cluster results to `url_cosharing_clusters`, membership snapshots to `url_cosharing_membership`, and run metadata to `url_cosharing_runs`.
 
 ## Architecture
 
 Functional Core / Imperative Shell:
 - `config.py` — env var parsing into frozen dataclasses (Core)
 - `queries.py` — SQL query generation (Core)
-- `similarity.py` — build share matrix from URL share rows, TF-IDF transform, construct similarity graph (Core, no I/O)
-- `dismantling.py` — density-based dismantling to isolate cores (Core, no I/O)
-- `analyzer.py` — Leiden CPM clustering on core with bipartite metrics, Jaccard evolution tracking (Core)
+- `similarity.py` — build share matrix from URL share rows, TF-IDF transform, construct cosine-similarity graph (Core, no I/O)
+- `dismantling.py` — density-based dismantling (grid search + knee detection + guardrails) to isolate coordinated cores (Core, no I/O)
+- `analyzer.py` — Leiden CPM clustering on core with similarity weights, Jaccard evolution tracking (Core)
+- `calibrate.py` — density-surface dump for offline tuning (Shell)
 - `db.py` — ClickHouse client wrapper (Shell)
 - `main.py` — polling loop, signal handling, orchestration (Shell)
 
-## Detection Pipeline
+## Detection Methodology
 
-1. **Fetch:** 7-day rolling window of URL shares per account from `osprey_execution_results`
-2. **Similarity:** Build share matrix (accounts × URLs), compute TF-IDF cosine similarity (edge_epsilon for sparsity), filter by min_unique_urls per account and min_url_sharers per URL
-3. **Dismantling:** Density-based edge filtering over quantile grid to isolate coordinated cores (density_floor threshold, max_flagged_fraction guardrail)
-4. **Core Clustering:** Leiden CPM on surviving core with cosine-similarity edge weights, min_cluster_size filtering
-5. **Evolution:** Jaccard matching against prior membership snapshots (jaccard_threshold for continuation/merge/split classification)
-6. **Write:** Cluster rows with similarity metrics (mean_edge_similarity, subgraph_density) and evolution, membership snapshots for all members, run metadata (edge/centrality quantiles, density, counts)
+**TF-IDF Weighting:** Edge weight w(a, b) = cos(v_a, v_b) where v_a is account a's TF-IDF vector: tf = raw co-share count per URL, idf = ln(N / df), L2-normalized. Edge weights are in [0, 1].
 
-## Key Configuration Knobs
+**Density-Based Dismantling:** Grid search over (edge_quantile, centrality_quantile) pairs to find the point minimizing component count subject to density ≥ density_floor. Applies knee-detection heuristic to avoid over-flagging (knee_found = false on days with weak phase transitions is expected behaviour). Guardrail: if survived nodes exceed max_flagged_fraction of the eligible graph, triggers alert (indicates potential over-flagging).
 
-- `window_days` — rolling window for historical URL shares (default 7)
-- `min_unique_urls`, `min_url_sharers`, `max_url_df_pctl` — similarity network construction filters
-- `edge_epsilon` — sparsity threshold for TF-IDF cosine edges
-- `edge_quantile_grid`, `centrality_quantile_grid` — dismantling surface points
-- `density_floor`, `max_flagged_fraction` — knee-finding thresholds
-- `resolution` — Leiden CPM resolution parameter
-- `min_cluster_size` — minimum cluster membership
-- `jaccard_threshold` — evolution classification threshold
+**Precision-First Semantics:** Pipeline targets precision > 0.9 at recall ≈ 0.1 per the paper — cluster membership is a strong coordination signal, not exhaustive coverage. Empty results (`knee_found = false`) are correct behaviour; investigate only if paired with rising account eligibility.
 
-## Metrics
+**Co-share Count Semantics:** Cluster `total_weight` = Σ over cluster URLs of C(sharing members, 2), i.e., the binomial count of unique account pairs sharing each URL in the cluster.
 
-**Cluster `total_weight`:** Σ over cluster URLs of C(k, 2) where k = number of cluster members sharing that URL. Semantics: binomial co-share count (accounts only paired if they share the same URL).
+**Cluster Metrics:**
+- `mean_edge_similarity` — mean cosine weight on edges in subgraph (0 if no edges)
+- `subgraph_density` — (edges) / (possible edges), range [0, 1]
 
-**Cluster `mean_edge_similarity`:** Mean of similarity weights on edges in the cluster subgraph (0 if no edges).
-
-**Cluster `subgraph_density`:** (edges in subgraph) / (possible edges in subgraph), range [0, 1].
-
-**Run metadata:** Captures stage counts (accounts_raw/eligible, urls_eligible, graph_edges), chosen quantiles, whether knee was found, flagged account count, and cluster count written.
+**Run Metadata:** Captures stage counts (accounts_raw/eligible, urls_eligible, graph_edges), chosen quantiles, whether knee was found, flagged account count, and cluster count written.
 
 ## Contract
 
 - **Input:** `osprey_execution_results` (account DIDs, URL shares, dates)
-- **Output:** `url_cosharing_clusters` (cluster results, metrics, evolution), `url_cosharing_membership` (daily snapshots, TTL 7 days), `url_cosharing_runs` (run metadata)
+- **Output:** `url_cosharing_clusters` (cluster results, metrics + `mean_edge_similarity`, `subgraph_density`, evolution), `url_cosharing_membership` (daily snapshots, TTL 7 days), `url_cosharing_runs` (run metadata)
 - **Dependencies:** ClickHouse only. `similarity.py` and `dismantling.py` have no I/O or ClickHouse imports (pure functional core).
 
 ## Commands
 
 - `cd url_cosharing && uv run pytest` — Run tests
+- `uv run python -m url_cosharing.calibrate` — Dump density-surface grid for calibration
 - `docker compose up url-cosharing` — Start sidecar
