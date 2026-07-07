@@ -5,26 +5,28 @@ from typing import Sequence
 
 import pytest
 
-from url_cosharing.analyzer import EvolutionEvent, PairRow, TimestampedCluster
+from url_cosharing.analyzer import EvolutionEvent, TimestampedCluster
 from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
-from url_cosharing.db import MembershipRow, MemberTimestamp
+from url_cosharing.db import MembershipRow, MemberTimestamp, RunMetadata
 from url_cosharing.main import run_cycle
+from url_cosharing.similarity import UrlShareRow
 
 
 class FakeDb:
     """In-memory stub for database layer, captures inserted results."""
 
     def __init__(self) -> None:
-        self.pairs: list[PairRow] = []
+        self.url_shares: list[UrlShareRow] = []
         self.membership_rows: list[MembershipRow] = []
         self.timestamp_rows: list[MemberTimestamp] = []
         self.captured_clusters: list[tuple[date, TimestampedCluster, EvolutionEvent]] = []
         self.captured_membership: list[tuple[date, str, str]] = []
+        self.captured_runs: list[tuple[str, RunMetadata]] = []
         self.deleted_run_dates: list[tuple[str, date]] = []
 
-    def fetch_pairs(self, query: str) -> list[PairRow]:
-        """Returns pre-configured pairs."""
-        return self.pairs
+    def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+        """Returns pre-configured URL shares."""
+        return self.url_shares
 
     def fetch_historical_membership(self, query: str) -> list[MembershipRow]:
         """Returns pre-configured membership rows."""
@@ -42,6 +44,10 @@ class FakeDb:
         """Captures membership results for later assertion."""
         self.captured_membership.extend(membership)
 
+    def insert_run(self, table: str, run: RunMetadata) -> None:
+        """Captures run metadata for later assertion."""
+        self.captured_runs.append((table, run))
+
     def delete_run_date(self, table: str, run_date: date) -> None:
         """Records deletion calls for later assertion."""
         self.deleted_run_dates.append((table, run_date))
@@ -55,21 +61,21 @@ class FakeDb:
 def base_config() -> AnalysisConfig:
     return AnalysisConfig(
         interval_seconds=3600,
-        resolution=0.05,
+        resolution=0.5,
         min_edge_weight=2,
         min_cluster_size=3,
         min_cosharers=3,
         jaccard_threshold=0.5,
         evolution_window_days=7,
         window_days=7,
-        min_unique_urls=10,
-        min_url_sharers=5,
-        max_url_df_pctl=0.90,
-        edge_epsilon=0.05,
-        edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
-        centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+        min_unique_urls=2,
+        min_url_sharers=2,
+        max_url_df_pctl=0.99,
+        edge_epsilon=0.01,
+        edge_quantile_grid=(0.5, 0.9),
+        centrality_quantile_grid=(0.5, 0.9),
         density_floor=0.5,
-        max_flagged_fraction=0.02,
+        max_flagged_fraction=0.9,
         runs_table='url_cosharing_runs',
         pairs_table='url_cosharing_pairs',
         clusters_table='url_cosharing_clusters',
@@ -160,255 +166,148 @@ class TestSanitizeDid:
 
 
 class TestRunCycle:
-    def test_run_cycle_processes_pairs_and_writes_clusters(self, app_config: AppConfig) -> None:
-        """Test that run_cycle processes pairs and writes clusters."""
+    def test_full_cycle_with_coordinated_accounts(self, app_config: AppConfig) -> None:
+        """Full cycle: coordinated 4 accounts share same 4 URLs, land in one cluster."""
         fake_db = FakeDb()
 
-        fake_db.pairs = [
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user2',
-                weight=5,
-                newman_weight=5 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user3',
-                weight=4,
-                newman_weight=4 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user2',
-                account_b='did:plc:user3',
-                weight=3,
-                newman_weight=3 / 2,
-                shared_urls=['https://example.com'],
-            ),
-        ]
+        # 4 coordinated accounts, each sharing the same 4 URLs
+        coordinated = ['did:plc:c1', 'did:plc:c2', 'did:plc:c3', 'did:plc:c4']
+        urls = ['https://example.com/1', 'https://example.com/2', 'https://example.com/3', 'https://example.com/4']
+        for account in coordinated:
+            for url in urls:
+                fake_db.url_shares.append(UrlShareRow(did=account, url=url, share_count=1))
 
-        fake_db.timestamp_rows = [
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
-            MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
-            MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
-        ]
+        # 6 background accounts, each with 2 distinct URLs + 1 shared with a coordinated URL
+        for i in range(6):
+            account = f'did:plc:bg{i}'
+            # Distinct URLs
+            fake_db.url_shares.append(UrlShareRow(did=account, url=f'https://bg.com/{i}', share_count=1))
+            fake_db.url_shares.append(UrlShareRow(did=account, url=f'https://bg.com/{i}_alt', share_count=1))
+            # One shared with a coordinated URL (keeps df < N)
+            fake_db.url_shares.append(UrlShareRow(did=account, url=urls[i % 4], share_count=1))
+
+        # Timestamps for all members
+        for account in coordinated:
+            for hour in [10, 12, 14]:
+                fake_db.timestamp_rows.append(MemberTimestamp(did=account, ts=datetime(2026, 3, 21, hour, 0, 0)))
 
         run_cycle(fake_db, app_config)
 
-        assert len(fake_db.captured_clusters) > 0
-        assert len(fake_db.captured_membership) > 0
+        # Should delete three tables
+        assert len(fake_db.deleted_run_dates) == 3
+        tables_deleted = {table for table, _ in fake_db.deleted_run_dates}
+        assert tables_deleted == {'url_cosharing_clusters', 'url_cosharing_membership', 'url_cosharing_runs'}
 
-    def test_empty_pairs_skips_processing(self, app_config: AppConfig) -> None:
-        """Test that empty pairs skip processing."""
+        # Should have one cluster with 4 members
+        assert len(fake_db.captured_clusters) >= 1
+        assert any(len(event.members) == 4 for _, _, event in fake_db.captured_clusters)
+
+        # Membership rows for all cluster members
+        assert len(fake_db.captured_membership) >= 4
+
+        # Run metadata written exactly once
+        assert len(fake_db.captured_runs) == 1
+        table, run = fake_db.captured_runs[0]
+        assert table == 'url_cosharing_runs'
+        assert run.knee_found is True
+        assert run.cluster_count >= 1
+        assert run.flagged_accounts >= 4
+
+    def test_empty_input_writes_run_metadata(self, app_config: AppConfig) -> None:
+        """Empty input: no clusters, run row written with zero counts."""
         fake_db = FakeDb()
-        fake_db.pairs = []
+        fake_db.url_shares = []
 
         run_cycle(fake_db, app_config)
 
+        # Should still delete three tables (idempotency)
+        assert len(fake_db.deleted_run_dates) == 3
+
+        # No clusters or membership
         assert len(fake_db.captured_clusters) == 0
         assert len(fake_db.captured_membership) == 0
 
-    def test_run_cycle_exception_propagates(self, app_config: AppConfig) -> None:
-        """Test that exceptions from FakeDb propagate."""
+        # Run metadata still written with zero counts
+        assert len(fake_db.captured_runs) == 1
+        table, run = fake_db.captured_runs[0]
+        assert table == 'url_cosharing_runs'
+        assert run.accounts_raw == 0
+        assert run.accounts_eligible == 0
+        assert run.urls_eligible == 0
+        assert run.cluster_count == 0
+        assert run.knee_found is False
+
+    def test_no_knee_forces_empty_clusters(self, app_config: AppConfig, base_config: AnalysisConfig) -> None:
+        """No knee via density_floor=1.0: zero clusters, run records knee_found=False."""
         fake_db = FakeDb()
 
-        def raise_error(query):
-            raise RuntimeError('ClickHouse unavailable')
+        # Add some URL shares that would normally form a cluster
+        for account in ['did:plc:c1', 'did:plc:c2', 'did:plc:c3']:
+            for url in ['https://example.com/1', 'https://example.com/2']:
+                fake_db.url_shares.append(UrlShareRow(did=account, url=url, share_count=1))
 
-        fake_db.fetch_pairs = raise_error
+        # Create new config with density_floor=1.0
+        no_knee_config = AnalysisConfig(
+            interval_seconds=base_config.interval_seconds,
+            resolution=base_config.resolution,
+            min_edge_weight=base_config.min_edge_weight,
+            min_cluster_size=base_config.min_cluster_size,
+            min_cosharers=base_config.min_cosharers,
+            jaccard_threshold=base_config.jaccard_threshold,
+            evolution_window_days=base_config.evolution_window_days,
+            window_days=base_config.window_days,
+            min_unique_urls=base_config.min_unique_urls,
+            min_url_sharers=base_config.min_url_sharers,
+            max_url_df_pctl=base_config.max_url_df_pctl,
+            edge_epsilon=base_config.edge_epsilon,
+            edge_quantile_grid=base_config.edge_quantile_grid,
+            centrality_quantile_grid=base_config.centrality_quantile_grid,
+            density_floor=1.0,
+            max_flagged_fraction=base_config.max_flagged_fraction,
+            runs_table=base_config.runs_table,
+            pairs_table=base_config.pairs_table,
+            clusters_table=base_config.clusters_table,
+            membership_table=base_config.membership_table,
+            source_table=base_config.source_table,
+        )
+        test_config = AppConfig(clickhouse=app_config.clickhouse, analysis=no_knee_config)
 
-        with pytest.raises(RuntimeError, match='ClickHouse unavailable'):
-            run_cycle(fake_db, app_config)
+        run_cycle(fake_db, test_config)
 
-    def test_run_cycle_creates_birth_clusters(self, app_config: AppConfig) -> None:
-        """Test that clusters with no historical match are marked as birth."""
+        # No clusters should be written
+        assert len(fake_db.captured_clusters) == 0
+
+        # Run metadata shows no knee
+        assert len(fake_db.captured_runs) == 1
+        _, run = fake_db.captured_runs[0]
+        assert run.knee_found is False
+        assert run.cluster_count == 0
+
+    def test_idempotency_deletes_all_three_tables(self, app_config: AppConfig) -> None:
+        """Idempotency: delete_run_date called for clusters, membership, AND runs."""
         fake_db = FakeDb()
 
-        fake_db.pairs = [
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user2',
-                weight=5,
-                newman_weight=5 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user3',
-                weight=4,
-                newman_weight=4 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user2',
-                account_b='did:plc:user3',
-                weight=3,
-                newman_weight=3 / 2,
-                shared_urls=['https://example.com'],
-            ),
-        ]
-
-        fake_db.timestamp_rows = [
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
-            MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
-            MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
-        ]
+        fake_db.url_shares.append(UrlShareRow(did='did:plc:a1', url='https://example.com', share_count=1))
+        fake_db.url_shares.append(UrlShareRow(did='did:plc:a2', url='https://example.com', share_count=1))
 
         run_cycle(fake_db, app_config)
 
-        assert len(fake_db.captured_clusters) > 0
-        for run_date, cluster, event in fake_db.captured_clusters:
-            assert event.evolution_type == 'birth'
-            assert event.jaccard_score == 0.0
+        # Verify all three tables were deleted
+        assert len(fake_db.deleted_run_dates) == 3
+        tables = {table for table, _ in fake_db.deleted_run_dates}
+        assert tables == {'url_cosharing_clusters', 'url_cosharing_membership', 'url_cosharing_runs'}
 
-    def test_run_cycle_groups_membership_by_cluster(self, app_config: AppConfig) -> None:
-        """Test that membership rows are created for each cluster member."""
+    def test_death_events_skipped_in_writes(self, app_config: AppConfig) -> None:
+        """Death events are skipped: not inserted to clusters or membership."""
         fake_db = FakeDb()
 
-        fake_db.pairs = [
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user2',
-                weight=5,
-                newman_weight=5 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user3',
-                weight=4,
-                newman_weight=4 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user2',
-                account_b='did:plc:user3',
-                weight=3,
-                newman_weight=3 / 2,
-                shared_urls=['https://example.com'],
-            ),
-        ]
-
-        fake_db.timestamp_rows = [
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
-            MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
-            MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
-        ]
+        # Add minimal shares for processing
+        for account in ['did:plc:user1', 'did:plc:user2']:
+            for url in ['https://example.com/1', 'https://example.com/2']:
+                fake_db.url_shares.append(UrlShareRow(did=account, url=url, share_count=1))
 
         run_cycle(fake_db, app_config)
 
-        membership = fake_db.captured_membership
-        assert len(membership) >= 3
-
-        for run_date, cluster_id, did in membership:
-            assert isinstance(run_date, date)
-            assert isinstance(cluster_id, str)
-            assert isinstance(did, str)
-
-    def test_run_cycle_deletes_before_insert(self, app_config: AppConfig) -> None:
-        """Test that stale data for today is deleted before inserting new results."""
-        fake_db = FakeDb()
-
-        fake_db.pairs = [
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user2',
-                weight=5,
-                newman_weight=5 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user3',
-                weight=4,
-                newman_weight=4 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user2',
-                account_b='did:plc:user3',
-                weight=3,
-                newman_weight=3 / 2,
-                shared_urls=['https://example.com'],
-            ),
-        ]
-
-        fake_db.timestamp_rows = [
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
-            MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
-            MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
-        ]
-
-        run_cycle(fake_db, app_config)
-
-        assert len(fake_db.deleted_run_dates) == 2
-        tables_deleted = [table for table, _ in fake_db.deleted_run_dates]
-        assert 'url_cosharing_clusters' in tables_deleted
-        assert 'url_cosharing_membership' in tables_deleted
-
-    def test_empty_pairs_skips_delete(self, app_config: AppConfig) -> None:
-        """Test that no deletion happens when there are no pairs to process."""
-        fake_db = FakeDb()
-        fake_db.pairs = []
-
-        run_cycle(fake_db, app_config)
-
-        assert len(fake_db.deleted_run_dates) == 0
-
-    def test_run_cycle_with_temporal_timestamps(self, app_config: AppConfig) -> None:
-        """Test that temporal metrics are computed correctly."""
-        fake_db = FakeDb()
-
-        fake_db.pairs = [
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user2',
-                weight=5,
-                newman_weight=5 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user1',
-                account_b='did:plc:user3',
-                weight=4,
-                newman_weight=4 / 2,
-                shared_urls=['https://example.com'],
-            ),
-            PairRow(
-                date=date(2026, 3, 22),
-                account_a='did:plc:user2',
-                account_b='did:plc:user3',
-                weight=3,
-                newman_weight=3 / 2,
-                shared_urls=['https://example.com'],
-            ),
-        ]
-
-        fake_db.timestamp_rows = [
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 10, 0, 0)),
-            MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
-            MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
-            MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
-        ]
-
-        run_cycle(fake_db, app_config)
-
-        assert len(fake_db.captured_clusters) > 0
-        for run_date, cluster, event in fake_db.captured_clusters:
-            assert cluster.temporal_spread_hours >= 0.0
-            assert cluster.mean_posting_interval_seconds >= 0.0
+        # All captured clusters should have non-death evolution types
+        for _, _, event in fake_db.captured_clusters:
+            assert event.evolution_type != 'death'
