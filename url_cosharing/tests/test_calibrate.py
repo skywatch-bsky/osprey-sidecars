@@ -87,7 +87,7 @@ class TestFormatSurface:
         assert 'graph_edges=2' in lines[4]
 
     def test_format_surface_summary_footer_values(self) -> None:
-        """Summary footer lines include knee_found, quantiles, density, guardrail, flagged_accounts, cluster_count."""
+        """Summary footer lines include knee_found, quantiles, density, guardrail, flagged_accounts."""
         graph = ig.Graph(n=2)
         graph.add_edges([(0, 1)])
         graph.es['similarity'] = [0.85]

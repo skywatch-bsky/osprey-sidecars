@@ -24,7 +24,7 @@ Functional Core / Imperative Shell:
 
 **TF-IDF Weighting:** Edge weight w(a, b) = cos(v_a, v_b) where v_a is account a's TF-IDF vector: tf = raw co-share count per URL, idf = ln(N / df), L2-normalized. Edge weights are in [0, 1].
 
-**Density-Based Dismantling:** Grid search over (edge_quantile, centrality_quantile) pairs to find the point minimizing component count subject to density ≥ density_floor. Applies knee-detection heuristic to avoid over-flagging (knee_found = false on days with weak phase transitions is expected behaviour). Guardrail: if survived nodes exceed max_flagged_fraction of the eligible graph, triggers alert (indicates potential over-flagging).
+**Density-Based Dismantling:** Grid search over (edge_quantile, centrality_quantile) pairs; the selected cell is the one with the largest jump in minimum-component-density relative to its grid neighbours (the knee), among cells whose density ≥ density_floor that also satisfy the guardrails. Applies knee-detection heuristic to avoid over-flagging (knee_found = false on days with weak phase transitions is expected behaviour). Guardrails: reject candidates if survived nodes exceed max_flagged_fraction of the eligible graph or fewer than min_cluster_size survivors (indicates potential over-flagging).
 
 **Precision-First Semantics:** Pipeline targets precision > 0.9 at recall ≈ 0.1 per the paper — cluster membership is a strong coordination signal, not exhaustive coverage. Empty results (`knee_found = false`) are correct behaviour; investigate only if paired with rising account eligibility.
 
