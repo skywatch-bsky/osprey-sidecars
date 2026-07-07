@@ -4,51 +4,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from url_cosharing.analyzer import EvolutionEvent, PairRow, TimestampedCluster
+from url_cosharing.analyzer import EvolutionEvent, TimestampedCluster
 from url_cosharing.config import ClickHouseConfig
 from url_cosharing.db import CosharingDb, MembershipRow, MemberTimestamp
 from url_cosharing.similarity import UrlShareRow
-
-
-class TestPairRow:
-    def test_create_with_all_fields(self) -> None:
-        row = PairRow(
-            date=date(2026, 3, 22),
-            account_a='did:plc:user1',
-            account_b='did:plc:user2',
-            weight=5,
-            newman_weight=2.5,
-            shared_urls=['https://example.com', 'https://test.com'],
-        )
-        assert row.date == date(2026, 3, 22)
-        assert row.account_a == 'did:plc:user1'
-        assert row.account_b == 'did:plc:user2'
-        assert row.weight == 5
-        assert row.newman_weight == 2.5
-        assert row.shared_urls == ['https://example.com', 'https://test.com']
-
-    def test_create_with_empty_urls(self) -> None:
-        row = PairRow(
-            date=date(2026, 3, 22),
-            account_a='did:plc:user1',
-            account_b='did:plc:user2',
-            weight=1,
-            newman_weight=0.5,
-            shared_urls=[],
-        )
-        assert row.shared_urls == []
-
-    def test_is_frozen(self) -> None:
-        row = PairRow(
-            date=date(2026, 3, 22),
-            account_a='did:plc:user1',
-            account_b='did:plc:user2',
-            weight=5,
-            newman_weight=2.5,
-            shared_urls=['https://example.com'],
-        )
-        with pytest.raises(AttributeError):
-            row.weight = 10
 
 
 class TestMembershipRow:
@@ -93,66 +52,6 @@ class TestMemberTimestamp:
 
 
 class TestCosharingDb:
-    @patch('url_cosharing.db.clickhouse_connect.get_client')
-    def test_fetch_pairs_maps_columns_correctly(self, mock_get_client) -> None:
-        config = ClickHouseConfig(
-            host='localhost',
-            port=8123,
-            user='default',
-            password='clickhouse',
-            database='default',
-        )
-        mock_client = Mock()
-        mock_get_client.return_value = mock_client
-
-        db = CosharingDb(config)
-
-        mock_result = Mock()
-        mock_result.result_rows = [
-            (date(2026, 3, 22), 'did:plc:user1', 'did:plc:user2', 5, 2.5, ['https://example.com', 'https://test.com']),
-            (date(2026, 3, 22), 'did:plc:user3', 'did:plc:user4', 2, 1.0, []),
-        ]
-        mock_client.query.return_value = mock_result
-
-        rows = db.fetch_pairs('SELECT * FROM pairs')
-
-        assert len(rows) == 2
-        assert rows[0].date == date(2026, 3, 22)
-        assert rows[0].account_a == 'did:plc:user1'
-        assert rows[0].account_b == 'did:plc:user2'
-        assert rows[0].weight == 5
-        assert rows[0].newman_weight == 2.5
-        assert rows[0].shared_urls == ['https://example.com', 'https://test.com']
-
-        assert rows[1].account_a == 'did:plc:user3'
-        assert rows[1].weight == 2
-        assert rows[1].newman_weight == 1.0
-        assert rows[1].shared_urls == []
-
-    @patch('url_cosharing.db.clickhouse_connect.get_client')
-    def test_fetch_pairs_sets_max_execution_time(self, mock_get_client) -> None:
-        config = ClickHouseConfig(
-            host='localhost',
-            port=8123,
-            user='default',
-            password='clickhouse',
-            database='default',
-        )
-        mock_client = Mock()
-        mock_get_client.return_value = mock_client
-
-        db = CosharingDb(config)
-
-        mock_result = Mock()
-        mock_result.result_rows = []
-        mock_client.query.return_value = mock_result
-
-        db.fetch_pairs('SELECT * FROM pairs')
-
-        mock_client.query.assert_called_once()
-        call_kwargs = mock_client.query.call_args[1]
-        assert call_kwargs.get('settings') == {'max_execution_time': 120}
-
     @patch('url_cosharing.db.clickhouse_connect.get_client')
     def test_fetch_historical_membership_maps_columns_correctly(self, mock_get_client) -> None:
         config = ClickHouseConfig(

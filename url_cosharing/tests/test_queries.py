@@ -5,7 +5,6 @@ from url_cosharing.config import AnalysisConfig
 from url_cosharing.queries import (
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
-    fetch_pairs_query,
     fetch_url_shares_query,
     insert_clusters_query,
     insert_membership_query,
@@ -17,9 +16,7 @@ def base_config() -> AnalysisConfig:
     return AnalysisConfig(
         interval_seconds=3600,
         resolution=0.05,
-        min_edge_weight=2,
         min_cluster_size=3,
-        min_cosharers=3,
         jaccard_threshold=0.5,
         evolution_window_days=7,
         window_days=7,
@@ -32,100 +29,10 @@ def base_config() -> AnalysisConfig:
         density_floor=0.5,
         max_flagged_fraction=0.02,
         runs_table='url_cosharing_runs',
-        pairs_table='url_cosharing_pairs',
         clusters_table='url_cosharing_clusters',
         membership_table='url_cosharing_membership',
         source_table='osprey_execution_results',
     )
-
-
-class TestFetchPairsQuery:
-    def test_returns_string(self, base_config: AnalysisConfig) -> None:
-        query = fetch_pairs_query(base_config)
-        assert isinstance(query, str)
-        assert len(query) > 0
-
-    def test_uses_pairs_table_from_config(self, base_config: AnalysisConfig) -> None:
-        query = fetch_pairs_query(base_config)
-        assert base_config.pairs_table in query
-
-    def test_uses_yesterday_function(self, base_config: AnalysisConfig) -> None:
-        query = fetch_pairs_query(base_config)
-        assert 'yesterday()' in query
-
-    def test_does_not_prefilter_by_min_edge_weight(self, base_config: AnalysisConfig) -> None:
-        """min_edge_weight is applied in build_graph after aggregation, not in SQL."""
-        query = fetch_pairs_query(base_config)
-        assert f'weight >= {base_config.min_edge_weight}' not in query
-
-    def test_selects_all_required_columns(self, base_config: AnalysisConfig) -> None:
-        query = fetch_pairs_query(base_config)
-        assert 'date' in query
-        assert 'account_a' in query
-        assert 'account_b' in query
-        assert 'weight' in query
-        assert 'newman_weight' in query
-        assert 'shared_urls' in query
-
-    def test_with_custom_table_name(self) -> None:
-        config = AnalysisConfig(
-            interval_seconds=3600,
-            resolution=0.05,
-            min_edge_weight=2,
-            min_cluster_size=3,
-            min_cosharers=3,
-            jaccard_threshold=0.5,
-            evolution_window_days=7,
-            window_days=7,
-            min_unique_urls=10,
-            min_url_sharers=5,
-            max_url_df_pctl=0.90,
-            edge_epsilon=0.05,
-            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
-            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
-            density_floor=0.5,
-            max_flagged_fraction=0.02,
-            runs_table='url_cosharing_runs',
-            pairs_table='custom_pairs',
-            clusters_table='url_cosharing_clusters',
-            membership_table='url_cosharing_membership',
-            source_table='osprey_execution_results',
-        )
-        query = fetch_pairs_query(config)
-        assert 'custom_pairs' in query
-
-    def test_with_custom_min_edge_weight(self) -> None:
-        config = AnalysisConfig(
-            interval_seconds=3600,
-            resolution=0.05,
-            min_edge_weight=5,
-            min_cluster_size=3,
-            min_cosharers=3,
-            jaccard_threshold=0.5,
-            evolution_window_days=7,
-            window_days=7,
-            min_unique_urls=10,
-            min_url_sharers=5,
-            max_url_df_pctl=0.90,
-            edge_epsilon=0.05,
-            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
-            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
-            density_floor=0.5,
-            max_flagged_fraction=0.02,
-            runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
-            clusters_table='url_cosharing_clusters',
-            membership_table='url_cosharing_membership',
-            source_table='osprey_execution_results',
-        )
-        query = fetch_pairs_query(config)
-        assert 'weight >= 5' not in query
-
-    def test_no_weight_prefilter_in_sql(self, base_config: AnalysisConfig) -> None:
-        """SQL fetch returns all rows; weight filtering happens in build_graph after aggregation."""
-        query = fetch_pairs_query(base_config)
-        assert 'AND weight >=' not in query
-        assert 'AND newman_weight >=' not in query
 
 
 class TestFetchHistoricalMembershipQuery:
@@ -160,9 +67,7 @@ class TestFetchHistoricalMembershipQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -175,7 +80,6 @@ class TestFetchHistoricalMembershipQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='custom_membership',
             source_table='osprey_execution_results',
@@ -187,9 +91,7 @@ class TestFetchHistoricalMembershipQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=14,
             window_days=7,
@@ -202,7 +104,6 @@ class TestFetchHistoricalMembershipQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -251,9 +152,7 @@ class TestFetchMemberTimestampsQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -266,7 +165,6 @@ class TestFetchMemberTimestampsQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='custom_source',
@@ -323,9 +221,7 @@ class TestInsertClustersQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -338,7 +234,6 @@ class TestInsertClustersQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='custom_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -371,9 +266,7 @@ class TestInsertMembershipQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -386,7 +279,6 @@ class TestInsertMembershipQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='custom_membership',
             source_table='osprey_execution_results',
@@ -418,9 +310,7 @@ class TestFetchUrlSharesQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=1,
@@ -433,7 +323,6 @@ class TestFetchUrlSharesQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -478,9 +367,7 @@ class TestFetchUrlSharesQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -493,7 +380,6 @@ class TestFetchUrlSharesQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -511,9 +397,7 @@ class TestFetchUrlSharesQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -526,7 +410,6 @@ class TestFetchUrlSharesQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -544,9 +427,7 @@ class TestFetchUrlSharesQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -559,7 +440,6 @@ class TestFetchUrlSharesQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -572,9 +452,7 @@ class TestFetchUrlSharesQuery:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -587,7 +465,6 @@ class TestFetchUrlSharesQuery:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='custom_source_table',

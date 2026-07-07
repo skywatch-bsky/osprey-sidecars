@@ -7,7 +7,7 @@ from typing import Sequence
 
 import clickhouse_connect
 
-from url_cosharing.analyzer import EvolutionEvent, PairRow, TimestampedCluster
+from url_cosharing.analyzer import EvolutionEvent, TimestampedCluster
 from url_cosharing.config import ClickHouseConfig
 from url_cosharing.similarity import UrlShareRow
 
@@ -51,25 +51,6 @@ class CosharingDb:
             password=config.password,
             database=config.database,
         )
-
-    def fetch_pairs(self, query: str) -> list[PairRow]:
-        result = self._client.query(
-            query,
-            settings={'max_execution_time': 120},
-        )
-        rows = []
-        for row in result.result_rows:
-            rows.append(
-                PairRow(
-                    date=row[0],
-                    account_a=row[1],
-                    account_b=row[2],
-                    weight=int(row[3]),
-                    newman_weight=float(row[4]),
-                    shared_urls=list(row[5]) if row[5] else [],
-                )
-            )
-        return rows
 
     def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
         result = self._client.query(

@@ -4,20 +4,6 @@ from __future__ import annotations
 from url_cosharing.config import AnalysisConfig
 
 
-def fetch_pairs_query(config: AnalysisConfig) -> str:
-    return f"""
-        SELECT
-            date,
-            account_a,
-            account_b,
-            weight,
-            newman_weight,
-            shared_urls
-        FROM {config.pairs_table}
-        WHERE date = yesterday()
-    """
-
-
 def fetch_url_shares_query(config: AnalysisConfig) -> str:
     return f"""
         WITH url_shares AS (

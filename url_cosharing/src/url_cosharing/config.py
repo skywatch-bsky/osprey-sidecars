@@ -56,9 +56,7 @@ class ClickHouseConfig:
 class AnalysisConfig:
     interval_seconds: int
     resolution: float
-    min_edge_weight: int
     min_cluster_size: int
-    min_cosharers: int
     jaccard_threshold: float
     evolution_window_days: int
     window_days: int
@@ -71,7 +69,6 @@ class AnalysisConfig:
     density_floor: float
     max_flagged_fraction: float
     runs_table: str
-    pairs_table: str
     clusters_table: str
     membership_table: str
     source_table: str
@@ -81,9 +78,7 @@ class AnalysisConfig:
         return cls(
             interval_seconds=int(os.environ.get('URL_COSHARING_INTERVAL_SECONDS', '3600')),
             resolution=float(os.environ.get('URL_COSHARING_RESOLUTION', '0.05')),
-            min_edge_weight=int(os.environ.get('URL_COSHARING_MIN_EDGE_WEIGHT', '2')),
             min_cluster_size=int(os.environ.get('URL_COSHARING_MIN_CLUSTER_SIZE', '3')),
-            min_cosharers=int(os.environ.get('URL_COSHARING_MIN_COSHARERS', '3')),
             jaccard_threshold=float(os.environ.get('URL_COSHARING_JACCARD_THRESHOLD', '0.5')),
             evolution_window_days=int(os.environ.get('URL_COSHARING_EVOLUTION_WINDOW_DAYS', '7')),
             window_days=int(os.environ.get('URL_COSHARING_WINDOW_DAYS', '7')),
@@ -112,7 +107,6 @@ class AnalysisConfig:
                 float(os.environ.get('URL_COSHARING_MAX_FLAGGED_FRACTION', '0.02')),
             ),
             runs_table=_validate_table_name(os.environ.get('URL_COSHARING_RUNS_TABLE', 'url_cosharing_runs')),
-            pairs_table=_validate_table_name(os.environ.get('URL_COSHARING_PAIRS_TABLE', 'url_cosharing_pairs')),
             clusters_table=_validate_table_name(
                 os.environ.get('URL_COSHARING_CLUSTERS_TABLE', 'url_cosharing_clusters')
             ),

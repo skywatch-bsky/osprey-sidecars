@@ -9,9 +9,7 @@ def base_analysis_config() -> AnalysisConfig:
     return AnalysisConfig(
         interval_seconds=3600,
         resolution=0.05,
-        min_edge_weight=2,
         min_cluster_size=3,
-        min_cosharers=3,
         jaccard_threshold=0.5,
         evolution_window_days=7,
         window_days=7,
@@ -24,7 +22,6 @@ def base_analysis_config() -> AnalysisConfig:
         density_floor=0.5,
         max_flagged_fraction=0.02,
         runs_table='url_cosharing_runs',
-        pairs_table='url_cosharing_pairs',
         clusters_table='url_cosharing_clusters',
         membership_table='url_cosharing_membership',
         source_table='osprey_execution_results',
@@ -78,12 +75,9 @@ class TestAnalysisConfig:
     def test_from_env_defaults(self, monkeypatch) -> None:
         monkeypatch.delenv('URL_COSHARING_INTERVAL_SECONDS', raising=False)
         monkeypatch.delenv('URL_COSHARING_RESOLUTION', raising=False)
-        monkeypatch.delenv('URL_COSHARING_MIN_EDGE_WEIGHT', raising=False)
         monkeypatch.delenv('URL_COSHARING_MIN_CLUSTER_SIZE', raising=False)
-        monkeypatch.delenv('URL_COSHARING_MIN_COSHARERS', raising=False)
         monkeypatch.delenv('URL_COSHARING_JACCARD_THRESHOLD', raising=False)
         monkeypatch.delenv('URL_COSHARING_EVOLUTION_WINDOW_DAYS', raising=False)
-        monkeypatch.delenv('URL_COSHARING_PAIRS_TABLE', raising=False)
         monkeypatch.delenv('URL_COSHARING_CLUSTERS_TABLE', raising=False)
         monkeypatch.delenv('URL_COSHARING_MEMBERSHIP_TABLE', raising=False)
         monkeypatch.delenv('URL_COSHARING_SOURCE_TABLE', raising=False)
@@ -102,12 +96,9 @@ class TestAnalysisConfig:
 
         assert config.interval_seconds == 3600
         assert config.resolution == 0.05
-        assert config.min_edge_weight == 2
         assert config.min_cluster_size == 3
-        assert config.min_cosharers == 3
         assert config.jaccard_threshold == 0.5
         assert config.evolution_window_days == 7
-        assert config.pairs_table == 'url_cosharing_pairs'
         assert config.clusters_table == 'url_cosharing_clusters'
         assert config.membership_table == 'url_cosharing_membership'
         assert config.source_table == 'osprey_execution_results'
@@ -125,12 +116,9 @@ class TestAnalysisConfig:
     def test_from_env_overrides(self, monkeypatch) -> None:
         monkeypatch.setenv('URL_COSHARING_INTERVAL_SECONDS', '1800')
         monkeypatch.setenv('URL_COSHARING_RESOLUTION', '0.10')
-        monkeypatch.setenv('URL_COSHARING_MIN_EDGE_WEIGHT', '3')
         monkeypatch.setenv('URL_COSHARING_MIN_CLUSTER_SIZE', '5')
-        monkeypatch.setenv('URL_COSHARING_MIN_COSHARERS', '5')
         monkeypatch.setenv('URL_COSHARING_JACCARD_THRESHOLD', '0.6')
         monkeypatch.setenv('URL_COSHARING_EVOLUTION_WINDOW_DAYS', '14')
-        monkeypatch.setenv('URL_COSHARING_PAIRS_TABLE', 'custom_pairs')
         monkeypatch.setenv('URL_COSHARING_CLUSTERS_TABLE', 'custom_clusters')
         monkeypatch.setenv('URL_COSHARING_MEMBERSHIP_TABLE', 'custom_membership')
         monkeypatch.setenv('URL_COSHARING_SOURCE_TABLE', 'custom_source')
@@ -149,12 +137,9 @@ class TestAnalysisConfig:
 
         assert config.interval_seconds == 1800
         assert config.resolution == 0.10
-        assert config.min_edge_weight == 3
         assert config.min_cluster_size == 5
-        assert config.min_cosharers == 5
         assert config.jaccard_threshold == 0.6
         assert config.evolution_window_days == 14
-        assert config.pairs_table == 'custom_pairs'
         assert config.clusters_table == 'custom_clusters'
         assert config.membership_table == 'custom_membership'
         assert config.source_table == 'custom_source'
@@ -183,12 +168,6 @@ class TestAnalysisConfig:
 
         assert config.resolution == 0.15
 
-    def test_pairs_table_validates_name(self, monkeypatch) -> None:
-        monkeypatch.setenv('URL_COSHARING_PAIRS_TABLE', 'invalid@table')
-
-        with pytest.raises(ValueError, match='invalid table name'):
-            AnalysisConfig.from_env()
-
     def test_clusters_table_validates_name(self, monkeypatch) -> None:
         monkeypatch.setenv('URL_COSHARING_CLUSTERS_TABLE', 'invalid@table')
 
@@ -208,14 +187,12 @@ class TestAnalysisConfig:
             AnalysisConfig.from_env()
 
     def test_valid_table_names_with_dots_and_underscores(self, monkeypatch) -> None:
-        monkeypatch.setenv('URL_COSHARING_PAIRS_TABLE', 'db.table_name')
         monkeypatch.setenv('URL_COSHARING_CLUSTERS_TABLE', 'another_db.clusters_v2')
         monkeypatch.setenv('URL_COSHARING_MEMBERSHIP_TABLE', 'schema.members_123')
         monkeypatch.setenv('URL_COSHARING_SOURCE_TABLE', 'src.results')
 
         config = AnalysisConfig.from_env()
 
-        assert config.pairs_table == 'db.table_name'
         assert config.clusters_table == 'another_db.clusters_v2'
         assert config.membership_table == 'schema.members_123'
         assert config.source_table == 'src.results'
@@ -228,9 +205,7 @@ class TestAnalysisConfig:
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -243,7 +218,6 @@ class TestAnalysisConfig:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -251,7 +225,6 @@ class TestAnalysisConfig:
 
         assert config.interval_seconds == 3600
         assert config.resolution == 0.05
-        assert config.min_edge_weight == 2
         assert config.window_days == 7
         assert config.edge_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
 
@@ -388,9 +361,7 @@ class TestAppConfig:
         analysis_config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
-            min_edge_weight=2,
             min_cluster_size=3,
-            min_cosharers=3,
             jaccard_threshold=0.5,
             evolution_window_days=7,
             window_days=7,
@@ -403,7 +374,6 @@ class TestAppConfig:
             density_floor=0.5,
             max_flagged_fraction=0.02,
             runs_table='url_cosharing_runs',
-            pairs_table='url_cosharing_pairs',
             clusters_table='url_cosharing_clusters',
             membership_table='url_cosharing_membership',
             source_table='osprey_execution_results',
@@ -414,4 +384,4 @@ class TestAppConfig:
         )
 
         assert config.clickhouse.host == 'localhost'
-        assert config.analysis.min_edge_weight == 2
+        assert config.analysis.resolution == 0.05
