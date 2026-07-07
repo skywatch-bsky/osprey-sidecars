@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_.]+$')
 
@@ -37,6 +37,15 @@ def _validate_positive_int(name: str, value: int) -> int:
     if value < 1:
         raise ValueError(f'{name} must be >= 1: {value!r}')
     return value
+
+
+def _parse_bool(env_var: str, value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off'}:
+        return False
+    raise ValueError(f'{env_var} must be a boolean (1/0, true/false, yes/no, on/off): {value!r}')
 
 
 @dataclass(frozen=True)
@@ -140,13 +149,62 @@ class AnalysisConfig:
 
 
 @dataclass(frozen=True)
+class TelemetryConfig:
+    enabled: bool
+    service_name: str
+    service_version: str
+    environment: str
+    otlp_endpoint: str | None
+    traces_enabled: bool
+    metrics_enabled: bool
+
+    @classmethod
+    def disabled(cls) -> TelemetryConfig:
+        return cls(
+            enabled=False,
+            service_name='url-cosharing',
+            service_version='0.1.0',
+            environment='local',
+            otlp_endpoint=None,
+            traces_enabled=False,
+            metrics_enabled=False,
+        )
+
+    @classmethod
+    def from_env(cls) -> TelemetryConfig:
+        enabled = _parse_bool('URL_COSHARING_OTEL_ENABLED', os.environ.get('URL_COSHARING_OTEL_ENABLED', 'false'))
+        traces_enabled = _parse_bool(
+            'URL_COSHARING_OTEL_TRACES_ENABLED',
+            os.environ.get('URL_COSHARING_OTEL_TRACES_ENABLED', 'true' if enabled else 'false'),
+        )
+        metrics_enabled = _parse_bool(
+            'URL_COSHARING_OTEL_METRICS_ENABLED',
+            os.environ.get('URL_COSHARING_OTEL_METRICS_ENABLED', 'true' if enabled else 'false'),
+        )
+        endpoint = os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT')
+        if endpoint == '':
+            endpoint = None
+        return cls(
+            enabled=enabled,
+            service_name=os.environ.get('URL_COSHARING_OTEL_SERVICE_NAME', 'url-cosharing'),
+            service_version=os.environ.get('URL_COSHARING_OTEL_SERVICE_VERSION', '0.1.0'),
+            environment=os.environ.get('URL_COSHARING_OTEL_ENVIRONMENT', 'local'),
+            otlp_endpoint=endpoint,
+            traces_enabled=traces_enabled,
+            metrics_enabled=metrics_enabled,
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     clickhouse: ClickHouseConfig
     analysis: AnalysisConfig
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig.disabled)
 
     @classmethod
     def from_env(cls) -> AppConfig:
         return cls(
             clickhouse=ClickHouseConfig.from_env(),
             analysis=AnalysisConfig.from_env(),
+            telemetry=TelemetryConfig.from_env(),
         )

@@ -4,12 +4,16 @@ from datetime import date, datetime
 from typing import Sequence
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from url_cosharing.analyzer import EvolutionEvent, TimestampedCluster
 from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
 from url_cosharing.db import MembershipRow, MemberTimestamp, RunMetadata
 from url_cosharing.main import run_cycle
 from url_cosharing.similarity import UrlShareRow
+from url_cosharing.telemetry import TelemetryHandles
 
 
 class FakeDb:
@@ -60,6 +64,49 @@ class FakeDb:
     def close(self) -> None:
         """No-op."""
         pass
+
+
+class RecordingCounter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, dict[str, object] | None]] = []
+
+    def add(self, value: int, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+class RecordingHistogram:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int | float, dict[str, object] | None]] = []
+
+    def record(self, value: int | float, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+@pytest.fixture
+def telemetry_handles() -> tuple[TelemetryHandles, InMemorySpanExporter]:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer('url_cosharing.tests')
+    meter = object()
+    handles = TelemetryHandles(
+        tracer=tracer,
+        meter=meter,  # type: ignore[arg-type]
+        runs_total=RecordingCounter(),  # type: ignore[arg-type]
+        runs_failed_total=RecordingCounter(),  # type: ignore[arg-type]
+        knee_not_found_total=RecordingCounter(),  # type: ignore[arg-type]
+        guardrail_triggered_total=RecordingCounter(),  # type: ignore[arg-type]
+        run_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        stage_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        accounts_raw=RecordingHistogram(),  # type: ignore[arg-type]
+        accounts_eligible=RecordingHistogram(),  # type: ignore[arg-type]
+        urls_eligible=RecordingHistogram(),  # type: ignore[arg-type]
+        graph_edges=RecordingHistogram(),  # type: ignore[arg-type]
+        flagged_accounts=RecordingHistogram(),  # type: ignore[arg-type]
+        cluster_count=RecordingHistogram(),  # type: ignore[arg-type]
+        shutdown_callbacks=(provider.shutdown,),
+    )
+    return handles, exporter
 
 
 @pytest.fixture
@@ -223,6 +270,77 @@ class TestSanitizeDid:
 
 
 class TestRunCycle:
+    def test_records_run_spans_and_success_metrics(
+        self,
+        app_config: AppConfig,
+        telemetry_handles: tuple[TelemetryHandles, InMemorySpanExporter],
+    ) -> None:
+        fake_db = FakeDb()
+        fake_db.raw_account_count = 3
+        fake_db.url_shares = [
+            UrlShareRow(did='did:plc:a1', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a1', url='https://example.com/u2', share_count=1),
+            UrlShareRow(did='did:plc:a2', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a2', url='https://example.com/u2', share_count=1),
+            UrlShareRow(did='did:plc:a3', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a3', url='https://example.com/u3', share_count=1),
+        ]
+
+        handles, exporter = telemetry_handles
+        run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), telemetry=handles)
+
+        span_names = {span.name for span in exporter.get_finished_spans()}
+        expected = {
+            'url_cosharing.run_cycle',
+            'url_cosharing.fetch_url_shares',
+            'url_cosharing.fetch_raw_account_count',
+            'url_cosharing.build_similarity_network',
+            'url_cosharing.dismantle',
+            'url_cosharing.cluster_core',
+            'url_cosharing.fetch_member_timestamps',
+            'url_cosharing.compute_temporal_metrics',
+            'url_cosharing.fetch_historical_membership',
+            'url_cosharing.compute_evolution',
+            'url_cosharing.delete_stale_run_date',
+            'url_cosharing.persist_clusters',
+            'url_cosharing.persist_membership',
+            'url_cosharing.persist_run_metadata',
+        }
+        assert expected <= span_names
+        root = next(span for span in exporter.get_finished_spans() if span.name == 'url_cosharing.run_cycle')
+        assert root.attributes['run_date'] == '2026-07-07'
+        assert root.attributes['window_days'] == 7
+        assert root.attributes['accounts_raw'] == 3
+        assert root.attributes['accounts_eligible'] == 3
+        assert root.attributes['urls_eligible'] == 3
+        assert root.attributes['graph_edges'] == 1
+        assert 'did:plc:a1' not in str(root.attributes)
+        assert 'https://example.com/u1' not in str(root.attributes)
+
+        assert handles.runs_total.calls[0][0] == 1  # type: ignore[attr-defined]
+        assert handles.run_duration_seconds.calls  # type: ignore[attr-defined]
+        assert handles.stage_duration_seconds.calls  # type: ignore[attr-defined]
+        assert handles.accounts_raw.calls[0][0] == 3  # type: ignore[attr-defined]
+
+    def test_records_failure_metric_and_reraises(
+        self,
+        app_config: AppConfig,
+        telemetry_handles: tuple[TelemetryHandles, InMemorySpanExporter],
+    ) -> None:
+        class FailingDb(FakeDb):
+            def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+                raise RuntimeError('contains did:plc:abc and https://example.com')
+
+        handles, exporter = telemetry_handles
+        with pytest.raises(RuntimeError):
+            run_cycle(FailingDb(), app_config, run_date=date(2026, 7, 7), telemetry=handles)
+
+        assert handles.runs_failed_total.calls == [(1, {'stage': 'run_cycle', 'error.type': 'RuntimeError'})]  # type: ignore[attr-defined]
+        root = next(span for span in exporter.get_finished_spans() if span.name == 'url_cosharing.run_cycle')
+        assert root.attributes['error.type'] == 'RuntimeError'
+        assert 'did:plc:abc' not in str(root.attributes)
+        assert 'https://example.com' not in str(root.attributes)
+
     def test_full_cycle_with_coordinated_accounts(self, app_config: AppConfig) -> None:
         """Full cycle: coordinated 4 accounts share same 4 URLs, land in one cluster."""
         fake_db = FakeDb()

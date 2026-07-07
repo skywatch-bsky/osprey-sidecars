@@ -17,6 +17,7 @@ from url_cosharing.db import CosharingDb
 from url_cosharing.dismantling import DismantlingResult, dismantle
 from url_cosharing.queries import fetch_raw_account_count_query, fetch_url_shares_query
 from url_cosharing.similarity import SimilarityNetwork, similarity_network
+from url_cosharing.telemetry import setup_telemetry, stage_span
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger('url_cosharing.calibrate')
@@ -49,26 +50,38 @@ def format_surface(network: SimilarityNetwork, result: DismantlingResult, accoun
 def main() -> None:
     config = AppConfig.from_env()
     analysis = config.analysis
+    telemetry = setup_telemetry(config.telemetry)
     db = CosharingDb(config.clickhouse)
     try:
         as_of = date.today()
-        rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of))
-        logger.info(f'fetched {len(rows)} share rows')
-        accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, as_of))
-        network = similarity_network(rows, analysis.edge_epsilon)
-        result = dismantle(
-            network.graph,
-            analysis.edge_quantile_grid,
-            analysis.centrality_quantile_grid,
-            analysis.density_floor,
-            analysis.max_flagged_fraction,
-            analysis.max_flagged_accounts,
-            analysis.min_cluster_size,
-            logger,
-        )
-        sys.stdout.write(format_surface(network, result, accounts_raw) + '\n')
+        with telemetry.tracer.start_as_current_span(
+            'url_cosharing.calibrate',
+            attributes={'run_date': as_of.isoformat(), 'window_days': analysis.window_days},
+        ):
+            with stage_span(telemetry, 'url_cosharing.calibrate.fetch_url_shares'):
+                rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of))
+            logger.info(f'fetched {len(rows)} share rows')
+            with stage_span(telemetry, 'url_cosharing.calibrate.fetch_raw_account_count'):
+                accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, as_of))
+            with stage_span(telemetry, 'url_cosharing.calibrate.build_similarity_network'):
+                network = similarity_network(rows, analysis.edge_epsilon)
+            with stage_span(telemetry, 'url_cosharing.calibrate.dismantle'):
+                result = dismantle(
+                    network.graph,
+                    analysis.edge_quantile_grid,
+                    analysis.centrality_quantile_grid,
+                    analysis.density_floor,
+                    analysis.max_flagged_fraction,
+                    analysis.max_flagged_accounts,
+                    analysis.min_cluster_size,
+                    logger,
+                )
+            with stage_span(telemetry, 'url_cosharing.calibrate.format_surface'):
+                output = format_surface(network, result, accounts_raw)
+        sys.stdout.write(output + '\n')
     finally:
         db.close()
+        telemetry.shutdown()
 
 
 if __name__ == '__main__':

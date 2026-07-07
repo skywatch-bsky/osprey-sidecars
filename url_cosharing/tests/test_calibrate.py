@@ -3,9 +3,11 @@ import igraph as ig
 import numpy as np
 from scipy.sparse import csr_array
 
+from url_cosharing import calibrate
 from url_cosharing.calibrate import format_surface
+from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
 from url_cosharing.dismantling import DismantlingResult, GridCell
-from url_cosharing.similarity import ShareMatrix, SimilarityNetwork
+from url_cosharing.similarity import ShareMatrix, SimilarityNetwork, UrlShareRow
 
 
 class TestFormatSurface:
@@ -266,3 +268,64 @@ class TestFormatSurface:
         assert not output.endswith('\n')
         # But should have internal newlines
         assert '\n' in output
+
+
+class TestCalibrateMainTelemetry:
+    def test_main_telemetry_does_not_change_stdout(self, monkeypatch, capsys) -> None:
+        class FakeDb:
+            def __init__(self, config) -> None:
+                self.config = config
+
+            def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+                return [
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u3', share_count=1),
+                ]
+
+            def fetch_raw_account_count(self, query: str) -> int:
+                return 3
+
+            def close(self) -> None:
+                pass
+
+        app_config = AppConfig(
+            clickhouse=ClickHouseConfig(
+                host='localhost',
+                port=8123,
+                user='default',
+                password='clickhouse',
+                database='default',
+            ),
+            analysis=AnalysisConfig(
+                interval_seconds=3600,
+                resolution=0.05,
+                min_cluster_size=3,
+                jaccard_threshold=0.5,
+                evolution_window_days=7,
+                window_days=7,
+                min_unique_urls=2,
+                min_url_sharers=2,
+                max_url_df_fraction=0.90,
+                edge_epsilon=0.05,
+                edge_quantile_grid=(0.5, 0.9),
+                centrality_quantile_grid=(0.5, 0.9),
+                density_floor=0.5,
+                max_flagged_fraction=0.05,
+                runs_table='url_cosharing_runs',
+                clusters_table='url_cosharing_clusters',
+                membership_table='url_cosharing_membership',
+                source_table='osprey_execution_results',
+            ),
+        )
+        monkeypatch.setattr(calibrate.AppConfig, 'from_env', classmethod(lambda cls: app_config))
+        monkeypatch.setattr(calibrate, 'CosharingDb', FakeDb)
+
+        calibrate.main()
+
+        stdout = capsys.readouterr().out
+        assert stdout.startswith('edge_quantile\tcentrality_quantile\tmin_component_density')
+        assert '# accounts_raw=3 accounts_eligible=3 urls_eligible=3 graph_edges=1' in stdout
