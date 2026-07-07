@@ -275,6 +275,7 @@ def cluster_core(
         leidenalg.CPMVertexPartition,
         weights='similarity',
         resolution_parameter=resolution,
+        seed=42,
     )
 
     account_to_row = {did: idx for idx, did in enumerate(matrix.accounts)}

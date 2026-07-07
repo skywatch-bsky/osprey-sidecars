@@ -235,7 +235,7 @@ class TestRunCycle:
         assert run.knee_found is False
 
     def test_no_knee_forces_empty_clusters(self, app_config: AppConfig, base_config: AnalysisConfig) -> None:
-        """No knee via density_floor=1.0: zero clusters, run records knee_found=False."""
+        """No knee via density_floor=1.0: zero clusters, run records knee_found=False and edge_quantile==0.0."""
         fake_db = FakeDb()
 
         # Add some URL shares that would normally form a cluster
@@ -271,10 +271,11 @@ class TestRunCycle:
         # No clusters should be written
         assert len(fake_db.captured_clusters) == 0
 
-        # Run metadata shows no knee
+        # Run metadata shows no knee and edge_quantile == 0.0 when no knee selected
         assert len(fake_db.captured_runs) == 1
         _, run = fake_db.captured_runs[0]
         assert run.knee_found is False
+        assert run.edge_quantile == 0.0, "DDL documents edge_quantile=0 when no knee selected"
         assert run.cluster_count == 0
 
     def test_idempotency_deletes_all_three_tables(self, app_config: AppConfig) -> None:
@@ -292,10 +293,24 @@ class TestRunCycle:
         assert tables == {'url_cosharing_clusters', 'url_cosharing_membership', 'url_cosharing_runs'}
 
     def test_death_events_skipped_in_writes(self, app_config: AppConfig) -> None:
-        """Death events are skipped: not inserted to clusters or membership."""
+        """Death events are skipped: not inserted to clusters or membership.
+
+        Plant a prior membership row that will die (missing from today's clusters)
+        so a death event is generated and we can verify it's skipped.
+        """
         fake_db = FakeDb()
 
-        # Add minimal shares for processing
+        # Plant a prior membership row for a cluster that will not appear today
+        prior_cluster_id = '2026-03-20-0001'
+        fake_db.membership_rows.append(
+            MembershipRow(
+                run_date=date(2026, 3, 20),
+                cluster_id=prior_cluster_id,
+                did='did:plc:old_user',
+            )
+        )
+
+        # Add minimal shares for processing (no 'old_user', so prior cluster dies)
         for account in ['did:plc:user1', 'did:plc:user2']:
             for url in ['https://example.com/1', 'https://example.com/2']:
                 fake_db.url_shares.append(UrlShareRow(did=account, url=url, share_count=1))
@@ -303,5 +318,6 @@ class TestRunCycle:
         run_cycle(fake_db, app_config)
 
         # All captured clusters should have non-death evolution types
+        # (death events should be filtered and not appear in cluster inserts)
         for _, _, event in fake_db.captured_clusters:
-            assert event.evolution_type != 'death'
+            assert event.evolution_type != 'death', "Death events should be skipped in cluster writes"

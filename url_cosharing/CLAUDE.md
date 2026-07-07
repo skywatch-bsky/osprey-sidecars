@@ -1,42 +1,57 @@
 # URL Co-Sharing Graph Sidecar
 
-Last verified: 2026-07-06
+Last verified: 2026-07-07
 
 ## Purpose
 
-Detects coordinated inauthentic behaviour by identifying clusters of accounts that repeatedly share the same URLs on the same day. Builds a weighted co-sharing graph with Newman-weighted edges to prevent viral URLs from manufacturing clusters, runs Leiden community detection, and tracks cluster evolution across days. Reads from `url_cosharing_pairs` (populated by a ClickHouse scheduled materialized view), writes cluster results to `url_cosharing_clusters` and membership snapshots to `url_cosharing_membership`.
+Detects coordinated inauthentic behaviour by identifying clusters of accounts that repeatedly share the same URLs. Builds a similarity network via TF-IDF cosine distance, applies density-based dismantling to isolate dense coordinated cores, runs Leiden CPM on the core with similarity weights, and tracks cluster evolution across days. Reads from `osprey_execution_results` (7-day rolling window), writes cluster results to `url_cosharing_clusters`, membership snapshots to `url_cosharing_membership`, and run metadata to `url_cosharing_runs`.
 
 ## Architecture
 
 Functional Core / Imperative Shell:
 - `config.py` — env var parsing into frozen dataclasses (Core)
 - `queries.py` — SQL query generation (Core)
-- `analyzer.py` — graph construction, Leiden clustering, per-cluster metrics, Jaccard evolution tracking (Core)
+- `similarity.py` — build share matrix from URL share rows, TF-IDF transform, construct similarity graph (Core, no I/O)
+- `dismantling.py` — density-based dismantling to isolate cores (Core, no I/O)
+- `analyzer.py` — Leiden CPM clustering on core with bipartite metrics, Jaccard evolution tracking (Core)
 - `db.py` — ClickHouse client wrapper (Shell)
-- `main.py` — polling loop, signal handling (Shell)
+- `main.py` — polling loop, signal handling, orchestration (Shell)
 
-## Weighting Scheme
+## Detection Pipeline
 
-Pairs in `url_cosharing_pairs` carry two weights:
+1. **Fetch:** 7-day rolling window of URL shares per account from `osprey_execution_results`
+2. **Similarity:** Build share matrix (accounts × URLs), compute TF-IDF cosine similarity (edge_epsilon for sparsity), filter by min_unique_urls per account and min_url_sharers per URL
+3. **Dismantling:** Density-based edge filtering over quantile grid to isolate coordinated cores (density_floor threshold, max_flagged_fraction guardrail)
+4. **Core Clustering:** Leiden CPM on surviving core with cosine-similarity edge weights, min_cluster_size filtering
+5. **Evolution:** Jaccard matching against prior membership snapshots (jaccard_threshold for continuation/merge/split classification)
+6. **Write:** Cluster rows with similarity metrics (mean_edge_similarity, subgraph_density) and evolution, membership snapshots for all members, run metadata (edge/centrality quantiles, density, counts)
 
-1. **Raw weight** (co-share count): The number of URLs shared by both accounts on the same day. Used for:
-   - `min_edge_weight` filtering (default 2 — pairs must co-share at least 2 URLs to enter the graph)
-   - Investigation context (raw co-share magnitude)
+## Key Configuration Knobs
 
-2. **Newman weight** (Σ 1/(k_url − 1)): Per-pair sum of Newman's collaboration coefficients. For each URL the pair co-shares, contributes 1/(k_url − 1) where k_url is the number of accounts sharing that URL. Used for:
-   - Leiden clustering to down-weight viral URLs
-   - Example: a niche URL shared by 3 accounts contributes 0.5 per pair; a viral URL shared by 500 contributes ~0.002
-   - Prevents a single viral URL from manufacturing a heavy edge and triggering spurious cluster merges
+- `window_days` — rolling window for historical URL shares (default 7)
+- `min_unique_urls`, `min_url_sharers`, `max_url_df_pctl` — similarity network construction filters
+- `edge_epsilon` — sparsity threshold for TF-IDF cosine edges
+- `edge_quantile_grid`, `centrality_quantile_grid` — dismantling surface points
+- `density_floor`, `max_flagged_fraction` — knee-finding thresholds
+- `resolution` — Leiden CPM resolution parameter
+- `min_cluster_size` — minimum cluster membership
+- `jaccard_threshold` — evolution classification threshold
 
-**Cluster total_weight** remains the sum of raw weights over cluster edges — semantics: total co-share count inside the cluster.
+## Metrics
 
-**Resolution re-tuning:** CPM quality compares community edge-weight density against the resolution parameter. Switching to Newman weights systematically reduces effective edge weights (each shared URL contributes ≤0.5 instead of 1), potentially requiring re-tuning `URL_COSHARING_RESOLUTION` to maintain desired cluster density. See `docs/calibration.md` for calibration methodology.
+**Cluster `total_weight`:** Σ over cluster URLs of C(k, 2) where k = number of cluster members sharing that URL. Semantics: binomial co-share count (accounts only paired if they share the same URL).
+
+**Cluster `mean_edge_similarity`:** Mean of similarity weights on edges in the cluster subgraph (0 if no edges).
+
+**Cluster `subgraph_density`:** (edges in subgraph) / (possible edges in subgraph), range [0, 1].
+
+**Run metadata:** Captures stage counts (accounts_raw/eligible, urls_eligible, graph_edges), chosen quantiles, whether knee was found, flagged account count, and cluster count written.
 
 ## Contract
 
-- **Input:** `url_cosharing_pairs` (populated by ClickHouse scheduled materialized view from `osprey_execution_results`, includes `weight` and `newman_weight` columns)
-- **Output:** `url_cosharing_clusters` (cluster results with metrics and evolution, `total_weight` is raw sum), `url_cosharing_membership` (daily membership snapshots, TTL 7 days)
-- **Dependencies:** ClickHouse only. No imports from osprey_worker or other sidecars.
+- **Input:** `osprey_execution_results` (account DIDs, URL shares, dates)
+- **Output:** `url_cosharing_clusters` (cluster results, metrics, evolution), `url_cosharing_membership` (daily snapshots, TTL 7 days), `url_cosharing_runs` (run metadata)
+- **Dependencies:** ClickHouse only. `similarity.py` and `dismantling.py` have no I/O or ClickHouse imports (pure functional core).
 
 ## Commands
 
