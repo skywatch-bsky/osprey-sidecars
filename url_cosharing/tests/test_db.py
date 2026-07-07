@@ -7,6 +7,7 @@ import pytest
 from url_cosharing.analyzer import EvolutionEvent, PairRow, TimestampedCluster
 from url_cosharing.config import ClickHouseConfig
 from url_cosharing.db import CosharingDb, MembershipRow, MemberTimestamp
+from url_cosharing.similarity import UrlShareRow
 
 
 class TestPairRow:
@@ -364,3 +365,105 @@ class TestCosharingDb:
         assert row_data[11] == 'birth'  # evolution_type
         assert row_data[12] == ()  # predecessor_cluster_ids
         assert row_data[13] == 0.0  # jaccard_score
+
+
+class TestUrlShareRow:
+    def test_create_with_all_fields(self) -> None:
+        row = UrlShareRow(
+            did='did:plc:user1',
+            url='https://example.com',
+            share_count=5,
+        )
+        assert row.did == 'did:plc:user1'
+        assert row.url == 'https://example.com'
+        assert row.share_count == 5
+
+    def test_is_frozen(self) -> None:
+        row = UrlShareRow(
+            did='did:plc:user1',
+            url='https://example.com',
+            share_count=5,
+        )
+        with pytest.raises(AttributeError):
+            row.share_count = 10
+
+
+class TestFetchUrlShares:
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_maps_columns_correctly(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        mock_result = Mock()
+        mock_result.result_rows = [
+            ('did:plc:a', 'https://x.test/1', 3),
+            ('did:plc:b', 'https://x.test/2', 2),
+        ]
+        mock_client.query.return_value = mock_result
+
+        rows = db.fetch_url_shares('SELECT * FROM url_shares')
+
+        assert len(rows) == 2
+        assert rows[0].did == 'did:plc:a'
+        assert rows[0].url == 'https://x.test/1'
+        assert rows[0].share_count == 3
+        assert isinstance(rows[0].share_count, int)
+
+        assert rows[1].did == 'did:plc:b'
+        assert rows[1].url == 'https://x.test/2'
+        assert rows[1].share_count == 2
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_sets_max_execution_time_300(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        mock_result = Mock()
+        mock_result.result_rows = []
+        mock_client.query.return_value = mock_result
+
+        db.fetch_url_shares('SELECT * FROM url_shares')
+
+        mock_client.query.assert_called_once()
+        call_kwargs = mock_client.query.call_args[1]
+        assert call_kwargs.get('settings') == {'max_execution_time': 300}
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_handles_empty_result_rows(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        mock_result = Mock()
+        mock_result.result_rows = []
+        mock_client.query.return_value = mock_result
+
+        rows = db.fetch_url_shares('SELECT * FROM url_shares')
+
+        assert rows == []

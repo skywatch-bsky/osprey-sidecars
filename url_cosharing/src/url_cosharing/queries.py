@@ -18,6 +18,48 @@ def fetch_pairs_query(config: AnalysisConfig) -> str:
     """
 
 
+def fetch_url_shares_query(config: AnalysisConfig) -> str:
+    return f"""
+        WITH url_shares AS (
+            SELECT
+                UserId AS did,
+                arrayJoin(FacetLinkList) AS url,
+                count() AS share_count
+            FROM {config.source_table}
+            WHERE Collection = 'app.bsky.feed.post'
+                AND OperationKind = 'create'
+                AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
+                AND toDate(__timestamp) <= yesterday()
+                AND length(FacetLinkList) > 0
+            GROUP BY did, url
+        ),
+        url_df AS (
+            SELECT url, uniqExact(did) AS df
+            FROM url_shares
+            GROUP BY url
+        ),
+        eligible_urls AS (
+            SELECT url
+            FROM url_df
+            WHERE df >= {config.min_url_sharers}
+                AND df <= (SELECT quantile({config.max_url_df_pctl})(df) FROM url_df)
+        ),
+        active_accounts AS (
+            SELECT did
+            FROM url_shares
+            GROUP BY did
+            HAVING uniqExact(url) >= {config.min_unique_urls}
+        )
+        SELECT
+            s.did,
+            s.url,
+            s.share_count
+        FROM url_shares s
+        WHERE s.url IN (SELECT url FROM eligible_urls)
+            AND s.did IN (SELECT did FROM active_accounts)
+    """
+
+
 def fetch_historical_membership_query(config: AnalysisConfig) -> str:
     return f"""
         SELECT

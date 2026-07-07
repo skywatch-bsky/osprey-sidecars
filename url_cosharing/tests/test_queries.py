@@ -6,6 +6,7 @@ from url_cosharing.queries import (
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
     fetch_pairs_query,
+    fetch_url_shares_query,
     insert_clusters_query,
     insert_membership_query,
 )
@@ -384,3 +385,204 @@ class TestInsertMembershipQuery:
         )
         query = insert_membership_query(config)
         assert 'custom_membership' in query
+
+
+class TestFetchUrlSharesQuery:
+    def test_returns_string(self, base_config: AnalysisConfig) -> None:
+        query = fetch_url_shares_query(base_config)
+        assert isinstance(query, str)
+        assert len(query) > 0
+
+    def test_reads_from_source_table(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: query reads from osprey_execution_results, not url_cosharing_pairs"""
+        query = fetch_url_shares_query(base_config)
+        assert 'osprey_execution_results' in query
+        assert 'url_cosharing_pairs' not in query
+
+    def test_window_bounds_with_default_window_days(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: default window_days=7 produces 'yesterday() - 6' ... 'yesterday()'"""
+        query = fetch_url_shares_query(base_config)
+        assert 'yesterday() - 6' in query
+        assert '<= yesterday()' in query
+
+    def test_window_bounds_with_custom_window_days(self) -> None:
+        """AC1.1: custom window_days produces correct bound"""
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_edge_weight=2,
+            min_cluster_size=3,
+            min_cosharers=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=1,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            pairs_table='url_cosharing_pairs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+        )
+        query = fetch_url_shares_query(config)
+        assert 'yesterday() - 0' in query
+
+    def test_includes_collection_filter(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: filters by Collection = 'app.bsky.feed.post'"""
+        query = fetch_url_shares_query(base_config)
+        assert "Collection = 'app.bsky.feed.post'" in query
+
+    def test_includes_operation_kind_filter(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: filters by OperationKind = 'create'"""
+        query = fetch_url_shares_query(base_config)
+        assert "OperationKind = 'create'" in query
+
+    def test_extracts_urls_via_array_join(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: uses arrayJoin(FacetLinkList)"""
+        query = fetch_url_shares_query(base_config)
+        assert 'arrayJoin(FacetLinkList)' in query
+
+    def test_filters_non_empty_facet_lists(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: only rows with length(FacetLinkList) > 0"""
+        query = fetch_url_shares_query(base_config)
+        assert 'length(FacetLinkList) > 0' in query
+
+    def test_selects_required_columns(self, base_config: AnalysisConfig) -> None:
+        """AC1.1: selects did, url, share_count"""
+        query = fetch_url_shares_query(base_config)
+        assert 's.did' in query
+        assert 's.url' in query
+        assert 's.share_count' in query
+
+    def test_activity_filter_default(self, base_config: AnalysisConfig) -> None:
+        """AC1.2: accounts with uniqExact(url) >= 10"""
+        query = fetch_url_shares_query(base_config)
+        assert f'uniqExact(url) >= {base_config.min_unique_urls}' in query
+
+    def test_activity_filter_custom(self) -> None:
+        """AC1.2: custom min_unique_urls changes the literal"""
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_edge_weight=2,
+            min_cluster_size=3,
+            min_cosharers=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=20,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            pairs_table='url_cosharing_pairs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+        )
+        query = fetch_url_shares_query(config)
+        assert 'uniqExact(url) >= 20' in query
+
+    def test_df_floor_default(self, base_config: AnalysisConfig) -> None:
+        """AC1.3: df >= 5"""
+        query = fetch_url_shares_query(base_config)
+        assert f'df >= {base_config.min_url_sharers}' in query
+
+    def test_df_floor_custom(self) -> None:
+        """AC1.3: custom min_url_sharers changes the literal"""
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_edge_weight=2,
+            min_cluster_size=3,
+            min_cosharers=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=10,
+            min_url_sharers=10,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            pairs_table='url_cosharing_pairs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+        )
+        query = fetch_url_shares_query(config)
+        assert 'df >= 10' in query
+
+    def test_df_percentile_ceiling_default(self, base_config: AnalysisConfig) -> None:
+        """AC1.3: quantile(0.9)(df) ceiling with default max_url_df_pctl=0.90"""
+        query = fetch_url_shares_query(base_config)
+        assert f'quantile({base_config.max_url_df_pctl})(' in query
+
+    def test_df_percentile_ceiling_custom(self) -> None:
+        """AC1.3: custom max_url_df_pctl changes the quantile literal"""
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_edge_weight=2,
+            min_cluster_size=3,
+            min_cosharers=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.80,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            pairs_table='url_cosharing_pairs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+        )
+        query = fetch_url_shares_query(config)
+        assert 'quantile(0.8)(' in query
+
+    def test_with_custom_source_table(self) -> None:
+        """Custom source_table is used in FROM clause"""
+        config = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_edge_weight=2,
+            min_cluster_size=3,
+            min_cosharers=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=10,
+            min_url_sharers=5,
+            max_url_df_pctl=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
+            density_floor=0.5,
+            max_flagged_fraction=0.02,
+            runs_table='url_cosharing_runs',
+            pairs_table='url_cosharing_pairs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='custom_source_table',
+        )
+        query = fetch_url_shares_query(config)
+        assert 'custom_source_table' in query

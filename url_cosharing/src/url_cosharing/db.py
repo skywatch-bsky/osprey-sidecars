@@ -9,6 +9,7 @@ import clickhouse_connect
 
 from url_cosharing.analyzer import EvolutionEvent, PairRow, TimestampedCluster
 from url_cosharing.config import ClickHouseConfig
+from url_cosharing.similarity import UrlShareRow
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,22 @@ class CosharingDb:
                     weight=int(row[3]),
                     newman_weight=float(row[4]),
                     shared_urls=list(row[5]) if row[5] else [],
+                )
+            )
+        return rows
+
+    def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+        result = self._client.query(
+            query,
+            settings={'max_execution_time': 300},
+        )
+        rows = []
+        for row in result.result_rows:
+            rows.append(
+                UrlShareRow(
+                    did=row[0],
+                    url=row[1],
+                    share_count=int(row[2]),
                 )
             )
         return rows
