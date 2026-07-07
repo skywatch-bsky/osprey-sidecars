@@ -1,8 +1,16 @@
 # pattern: Functional Core
-import pytest
-
-from url_cosharing.similarity import UrlShareRow, filter_shares, build_share_matrix, tfidf_transform, build_similarity_graph, similarity_network
 import numpy as np
+import pytest
+from scipy.sparse import csr_array, diags_array
+
+from url_cosharing.similarity import (
+    UrlShareRow,
+    build_share_matrix,
+    build_similarity_graph,
+    filter_shares,
+    similarity_network,
+    tfidf_transform,
+)
 
 
 class TestFilterShares:
@@ -57,9 +65,9 @@ class TestFilterShares:
         assert all(r.url == 'u1' for r in result)
 
     def test_ac13_url_ceiling_quantile(self):
-        """AC1.3: URLs above df ceiling (max_url_df_pctl quantile) are dropped."""
-        # 5 URLs with dfs: [1, 1, 1, 1, 10]
-        # At quantile 0.5 (median), should be at or below 1
+        """AC1.3: URLs above df ceiling (max_url_df_pctl quantile) are dropped.
+
+        At quantile 0.5 (median) of dfs [1, 1, 1, 1, 10], df_ceiling == 1.0 exactly."""
         rows = [
             UrlShareRow(did='a1', url='u1', share_count=1),  # df=1
             UrlShareRow(did='a2', url='u2', share_count=1),  # df=1
@@ -220,8 +228,6 @@ class TestTfidfTransform:
         Pre-norm a2: [0, 0×ln1] = [0, 0]
         Already zero, stays zero (no NaN)
         """
-        from scipy.sparse import csr_array
-
         # Create counts matrix manually
         data = np.array([2.0, 1.0, 3.0])
         row = np.array([0, 0, 1])
@@ -241,8 +247,6 @@ class TestTfidfTransform:
 
     def test_3account_case_with_hand_computed(self):
         """3 accounts, 3 URLs: all with df < N."""
-        from scipy.sparse import csr_array
-
         # a1: u1×1, u2×1
         # a2: u1×1, u3×1
         # a3: u2×1, u3×1
@@ -264,8 +268,6 @@ class TestTfidfTransform:
 
     def test_empty_matrix(self):
         """Empty matrix returns empty, no error."""
-        from scipy.sparse import csr_array
-
         empty = csr_array((0, 0))
         result = tfidf_transform(empty)
 
@@ -273,8 +275,6 @@ class TestTfidfTransform:
 
     def test_all_values_finite_and_nonnegative(self):
         """Property: all values finite, ≥ 0."""
-        from scipy.sparse import csr_array
-
         data = np.array([1.0, 2.0, 3.0, 1.0, 1.0])
         row = np.array([0, 0, 1, 1, 2])
         col = np.array([0, 1, 1, 2, 2])
@@ -291,8 +291,6 @@ class TestBuildSimilarityGraph:
 
     def test_identical_vectors_cosine_one(self):
         """Two accounts with identical share vectors → similarity ≈ 1.0 (AC1.4)."""
-        from scipy.sparse import csr_array
-
         # Two identical rows: [1, 0, 1]
         data = np.array([1.0, 1.0, 1.0, 1.0])
         row = np.array([0, 0, 1, 1])
@@ -302,7 +300,6 @@ class TestBuildSimilarityGraph:
         # Normalize (they already are, but for clarity)
         norms = np.sqrt(np.asarray(tfidf.multiply(tfidf).sum(axis=1)).ravel())
         inv_norms = np.divide(1.0, norms, where=norms > 0, out=np.zeros_like(norms))
-        from scipy.sparse import diags_array
         tfidf_norm = diags_array(inv_norms) @ tfidf
 
         graph = build_similarity_graph(tfidf_norm, ('a1', 'a2'), edge_epsilon=0.0)
@@ -312,8 +309,6 @@ class TestBuildSimilarityGraph:
 
     def test_disjoint_vectors_cosine_zero(self):
         """Two accounts with disjoint URL sets → cosine 0 → no edge."""
-        from scipy.sparse import csr_array
-
         # a1: [1, 0], a2: [0, 1]
         data = np.array([1.0, 1.0])
         row = np.array([0, 1])
@@ -326,8 +321,6 @@ class TestBuildSimilarityGraph:
 
     def test_epsilon_boundary(self):
         """Similarity just below epsilon gets no edge; at epsilon gets one."""
-        from scipy.sparse import csr_array
-
         # Create vectors that produce similarity ≈ 0.5
         # a1: [1, 1], a2: [1, 0] → dot product 1, norms sqrt(2) and 1 → cos ≈ 0.707
         data = np.array([1.0, 1.0, 1.0])
@@ -338,7 +331,6 @@ class TestBuildSimilarityGraph:
         # Normalize
         norms = np.sqrt(np.asarray(tfidf.multiply(tfidf).sum(axis=1)).ravel())
         inv_norms = np.divide(1.0, norms, where=norms > 0, out=np.zeros_like(norms))
-        from scipy.sparse import diags_array
         tfidf_norm = diags_array(inv_norms) @ tfidf
 
         # Below epsilon: no edge
@@ -352,8 +344,6 @@ class TestBuildSimilarityGraph:
 
     def test_weights_in_bounds(self):
         """All edge weights in [0, 1]."""
-        from scipy.sparse import csr_array
-
         data = np.array([1.0, 2.0, 1.0, 1.0])
         row = np.array([0, 0, 1, 2])
         col = np.array([0, 1, 1, 1])
@@ -362,7 +352,6 @@ class TestBuildSimilarityGraph:
         # Normalize
         norms = np.sqrt(np.asarray(tfidf.multiply(tfidf).sum(axis=1)).ravel())
         inv_norms = np.divide(1.0, norms, where=norms > 0, out=np.zeros_like(norms))
-        from scipy.sparse import diags_array
         tfidf_norm = diags_array(inv_norms) @ tfidf
 
         graph = build_similarity_graph(tfidf_norm, ('a1', 'a2', 'a3'), edge_epsilon=0.0)
@@ -372,8 +361,6 @@ class TestBuildSimilarityGraph:
 
     def test_isolate_accounts_preserved(self):
         """Accounts with no edges still appear as vertices."""
-        from scipy.sparse import csr_array
-
         # a1 and a2 disjoint, a3 isolated
         data = np.array([1.0, 1.0])
         row = np.array([0, 1])
@@ -387,8 +374,6 @@ class TestBuildSimilarityGraph:
 
     def test_vertex_names_match_accounts(self):
         """Vertex names in order match matrix.accounts."""
-        from scipy.sparse import csr_array
-
         data = np.array([1.0, 1.0])
         row = np.array([0, 1])
         col = np.array([0, 1])
@@ -429,9 +414,9 @@ class TestSimilarityNetwork:
         assert result.accounts_eligible == 3
         assert result.urls_eligible == 3
         assert result.graph.vcount() == 3
-        # a1 and a2 both share u2 (df=2, niche), so they form an edge
+        # a1 and a2 both share u2 (df=2, niche), so they form exactly one edge
         # a3 shares only u1 (ubiquitous) and u3, no edge to others
-        assert result.graph.ecount() >= 1  # at least a1-a2 edge
+        assert result.graph.ecount() == 1
 
     def test_ac15_empty_input(self):
         """AC1.5: empty input → empty graph, zero counts, no error."""
