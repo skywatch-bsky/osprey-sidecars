@@ -336,10 +336,14 @@ class TestRunCycle:
             run_cycle(FailingDb(), app_config, run_date=date(2026, 7, 7), telemetry=handles)
 
         assert handles.runs_failed_total.calls == [(1, {'stage': 'run_cycle', 'error.type': 'RuntimeError'})]  # type: ignore[attr-defined]
-        root = next(span for span in exporter.get_finished_spans() if span.name == 'url_cosharing.run_cycle')
+        spans = exporter.get_finished_spans()
+        root = next(span for span in spans if span.name == 'url_cosharing.run_cycle')
         assert root.attributes['error.type'] == 'RuntimeError'
-        assert 'did:plc:abc' not in str(root.attributes)
-        assert 'https://example.com' not in str(root.attributes)
+        for span in spans:
+            exported = f'{span.attributes} {span.events} {span.status.description}'
+            assert 'did:plc:abc' not in exported
+            assert 'https://example.com' not in exported
+            assert 'contains did:plc:abc' not in exported
 
     def test_full_cycle_with_coordinated_accounts(self, app_config: AppConfig) -> None:
         """Full cycle: coordinated 4 accounts share same 4 URLs, land in one cluster."""

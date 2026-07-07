@@ -98,6 +98,8 @@ def run_cycle(
     with telemetry.tracer.start_as_current_span(
         'url_cosharing.run_cycle',
         attributes={'run_date': run_date.isoformat(), 'window_days': analysis.window_days},
+        record_exception=False,
+        set_status_on_exception=False,
     ) as root_span:
         try:
             logger.info('fetching url shares')
@@ -243,7 +245,6 @@ def run_cycle(
             logger.info(f'wrote run metadata to {analysis.runs_table}')
         except Exception as exc:
             record_failure(telemetry, 'run_cycle', exc)
-            root_span.record_exception(exc)
             root_span.set_attribute('error.type', type(exc).__name__)
             raise
 

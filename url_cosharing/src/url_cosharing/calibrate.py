@@ -57,6 +57,8 @@ def main() -> None:
         with telemetry.tracer.start_as_current_span(
             'url_cosharing.calibrate',
             attributes={'run_date': as_of.isoformat(), 'window_days': analysis.window_days},
+            record_exception=False,
+            set_status_on_exception=False,
         ):
             with stage_span(telemetry, 'url_cosharing.calibrate.fetch_url_shares'):
                 rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of))

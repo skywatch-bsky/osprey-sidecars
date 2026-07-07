@@ -156,11 +156,15 @@ def stage_span(handles: TelemetryHandles, name: str, **attrs: Any) -> Iterator[S
     start = time.monotonic()
     span_attrs = low_cardinality_attributes(attrs, include_run_date=True)
     metric_attrs = low_cardinality_attributes({'stage': name.rsplit('.', 1)[-1]}, include_run_date=False)
-    with handles.tracer.start_as_current_span(name, attributes=span_attrs) as span:
+    with handles.tracer.start_as_current_span(
+        name,
+        attributes=span_attrs,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
         try:
             yield span
         except Exception as exc:
-            span.record_exception(exc)
             span.set_attribute('error.type', type(exc).__name__)
             raise
         finally:
