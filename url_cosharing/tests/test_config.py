@@ -1,7 +1,7 @@
 # pattern: Functional Core
 import pytest
 
-from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
+from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig, TelemetryConfig
 
 
 @pytest.fixture
@@ -350,6 +350,80 @@ class TestAnalysisConfig:
             AnalysisConfig.from_env()
 
 
+class TestTelemetryConfig:
+    def test_disabled_defaults(self, monkeypatch) -> None:
+        for env_var in TELEMETRY_ENV_VARS:
+            monkeypatch.delenv(env_var, raising=False)
+
+        config = TelemetryConfig.from_env()
+
+        assert config.enabled is False
+        assert config.service_name == 'url-cosharing'
+        assert config.service_version == '0.1.0'
+        assert config.environment == 'local'
+        assert config.otlp_endpoint is None
+        assert config.traces_enabled is False
+        assert config.metrics_enabled is False
+
+    @pytest.mark.parametrize('value', ['1', 'true', 'TRUE', 'yes', 'On'])
+    def test_bool_true_values(self, monkeypatch, value: str) -> None:
+        monkeypatch.setenv('URL_COSHARING_OTEL_ENABLED', value)
+
+        config = TelemetryConfig.from_env()
+
+        assert config.enabled is True
+        assert config.traces_enabled is True
+        assert config.metrics_enabled is True
+
+    @pytest.mark.parametrize('value', ['0', 'false', 'FALSE', 'no', 'Off'])
+    def test_bool_false_values(self, monkeypatch, value: str) -> None:
+        monkeypatch.setenv('URL_COSHARING_OTEL_ENABLED', 'true')
+        monkeypatch.setenv('URL_COSHARING_OTEL_TRACES_ENABLED', value)
+        monkeypatch.setenv('URL_COSHARING_OTEL_METRICS_ENABLED', value)
+
+        config = TelemetryConfig.from_env()
+
+        assert config.enabled is True
+        assert config.traces_enabled is False
+        assert config.metrics_enabled is False
+
+    def test_from_env_overrides(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_OTEL_ENABLED', 'true')
+        monkeypatch.setenv('URL_COSHARING_OTEL_SERVICE_NAME', 'custom-service')
+        monkeypatch.setenv('URL_COSHARING_OTEL_SERVICE_VERSION', '1.2.3')
+        monkeypatch.setenv('URL_COSHARING_OTEL_ENVIRONMENT', 'prod')
+        monkeypatch.setenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://collector:4317')
+        monkeypatch.setenv('URL_COSHARING_OTEL_TRACES_ENABLED', 'false')
+        monkeypatch.setenv('URL_COSHARING_OTEL_METRICS_ENABLED', 'true')
+
+        config = TelemetryConfig.from_env()
+
+        assert config.enabled is True
+        assert config.service_name == 'custom-service'
+        assert config.service_version == '1.2.3'
+        assert config.environment == 'prod'
+        assert config.otlp_endpoint == 'http://collector:4317'
+        assert config.traces_enabled is False
+        assert config.metrics_enabled is True
+
+    def test_invalid_bool_names_env_var(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_OTEL_ENABLED', 'maybe')
+
+        with pytest.raises(ValueError, match='URL_COSHARING_OTEL_ENABLED'):
+            TelemetryConfig.from_env()
+
+
+TELEMETRY_ENV_VARS = (
+    'URL_COSHARING_OTEL_ENABLED',
+    'URL_COSHARING_OTEL_SERVICE_NAME',
+    'URL_COSHARING_OTEL_SERVICE_VERSION',
+    'URL_COSHARING_OTEL_ENVIRONMENT',
+    'OTEL_EXPORTER_OTLP_ENDPOINT',
+    'URL_COSHARING_OTEL_TRACES_ENABLED',
+    'URL_COSHARING_OTEL_METRICS_ENABLED',
+)
+
+
 class TestAppConfig:
     def test_from_env_composes_both_configs(self, monkeypatch) -> None:
         monkeypatch.setenv('OSPREY_CLICKHOUSE_HOST', 'ch.example.com')
@@ -402,3 +476,4 @@ class TestAppConfig:
 
         assert config.clickhouse.host == 'localhost'
         assert config.analysis.resolution == 0.05
+        assert config.telemetry.enabled is False

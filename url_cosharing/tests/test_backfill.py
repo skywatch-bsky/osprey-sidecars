@@ -48,7 +48,7 @@ class TestRunBackfill:
         calls: list[date] = []
         monkeypatch.setattr(
             'url_cosharing.backfill.run_cycle',
-            lambda db, config, run_date: calls.append(run_date),
+            lambda db, config, run_date, telemetry=None: calls.append(run_date),
         )
 
         run_backfill(db=object(), config=object(), start=date(2026, 6, 25), end=date(2026, 6, 28))

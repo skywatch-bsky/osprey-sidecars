@@ -56,6 +56,19 @@ docker run --env-file .env url-cosharing
 | `URL_COSHARING_CLUSTERS_TABLE` | `url_cosharing_clusters` | ClickHouse table for cluster results |
 | `URL_COSHARING_MEMBERSHIP_TABLE` | `url_cosharing_membership` | ClickHouse table for membership snapshots |
 | `URL_COSHARING_SOURCE_TABLE` | `osprey_execution_results` | Source table for URL shares |
+| `URL_COSHARING_OTEL_ENABLED` | `false` | Enable OpenTelemetry traces/metrics |
+| `URL_COSHARING_OTEL_SERVICE_NAME` | `url-cosharing` | OTel service name |
+| `URL_COSHARING_OTEL_SERVICE_VERSION` | `0.1.0` | OTel service version |
+| `URL_COSHARING_OTEL_ENVIRONMENT` | `local` | OTel deployment environment |
+| `URL_COSHARING_OTEL_TRACES_ENABLED` | follows `URL_COSHARING_OTEL_ENABLED` | Enable OTel traces |
+| `URL_COSHARING_OTEL_METRICS_ENABLED` | follows `URL_COSHARING_OTEL_ENABLED` | Enable OTel metrics |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP collector endpoint used by the standard OTel exporter |
+
+## Observability
+
+OpenTelemetry is disabled by default. Set `URL_COSHARING_OTEL_ENABLED=true` and configure `OTEL_EXPORTER_OTLP_ENDPOINT` to export coarse run/stage traces and metrics to an OTLP collector. Traces cover the detector run and fixed pipeline stages such as fetching URL shares, building the similarity graph, dismantling, clustering, evolution, and persistence. Metrics record run success/failure, run and stage durations, knee/guardrail counters, and per-run counts such as accounts, URLs, graph edges, flagged accounts, and cluster count.
+
+Telemetry is intentionally low-cardinality and privacy-preserving. DIDs, URLs, domains, cluster IDs, sample URLs, and sample DIDs must not be emitted as span attributes or metric labels. Those high-cardinality domain details belong in ClickHouse result tables. `url_cosharing_runs` remains the durable audit table for detector methodology and stage counts; OpenTelemetry is operational observability for timings, failures, and coarse health signals.
 
 ## Output schema
 

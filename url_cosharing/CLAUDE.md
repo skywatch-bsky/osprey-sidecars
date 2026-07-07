@@ -19,6 +19,7 @@ Functional Core / Imperative Shell:
 - `calibrate.py` — density-surface dump for offline tuning (Shell)
 - `db.py` — ClickHouse client wrapper (Shell)
 - `main.py` — polling loop, signal handling, orchestration (Shell)
+- `telemetry.py` — OpenTelemetry setup, no-op-safe handles, low-cardinality span/metric helpers (Shell)
 
 ## Detection Methodology
 
@@ -37,6 +38,8 @@ Functional Core / Imperative Shell:
 - `subgraph_density` — (edges) / (possible edges), range [0, 1]
 
 **Run Metadata:** Captures stage counts (accounts_raw/eligible, urls_eligible, graph_edges), chosen quantiles, whether knee was found, flagged account count, and cluster count written.
+
+**OpenTelemetry:** OTel instrumentation is operational observability only; `url_cosharing_runs` remains the durable domain audit table. OTel spans and metrics are low-cardinality run/stage signals: fixed stage names, run/window counts, knee/guardrail booleans, failure type, and durations. Never add DIDs, URLs/domains, `cluster_id`, sample URLs, sample DIDs, ClickHouse credentials, or exception messages as span attributes or metric labels. Keep OTel SDK setup in `telemetry.py`; functional core modules (`similarity.py`, `dismantling.py`, `analyzer.py`, `queries.py`) must not import OTel.
 
 ## Contract
 

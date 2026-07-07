@@ -26,6 +26,7 @@ from datetime import date, timedelta
 from url_cosharing.config import AppConfig
 from url_cosharing.db import CosharingDb
 from url_cosharing.main import run_cycle
+from url_cosharing.telemetry import TelemetryHandles, setup_telemetry
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger('url_cosharing.backfill')
@@ -46,12 +47,18 @@ def parse_date_range(argv: list[str], today: date) -> tuple[date, date]:
     return start, end
 
 
-def run_backfill(db: CosharingDb, config: AppConfig, start: date, end: date) -> None:
+def run_backfill(
+    db: CosharingDb,
+    config: AppConfig,
+    start: date,
+    end: date,
+    telemetry: TelemetryHandles | None = None,
+) -> None:
     total = (end - start).days + 1
     for offset in range(total):
         run_date = start + timedelta(days=offset)
         logger.info(f'backfilling {run_date} ({offset + 1}/{total})')
-        run_cycle(db, config, run_date=run_date)
+        run_cycle(db, config, run_date=run_date, telemetry=telemetry)
 
 
 def main() -> None:
@@ -62,11 +69,13 @@ def main() -> None:
         sys.exit(2)
 
     config = AppConfig.from_env()
+    telemetry = setup_telemetry(config.telemetry)
     db = CosharingDb(config.clickhouse)
     try:
-        run_backfill(db, config, start, end)
+        run_backfill(db, config, start, end, telemetry=telemetry)
     finally:
         db.close()
+        telemetry.shutdown()
 
 
 if __name__ == '__main__':

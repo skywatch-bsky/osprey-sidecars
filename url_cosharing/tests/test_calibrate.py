@@ -1,11 +1,18 @@
 # pattern: Functional Core (pure formatter tests)
 import igraph as ig
 import numpy as np
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from scipy.sparse import csr_array
 
+from url_cosharing import calibrate
 from url_cosharing.calibrate import format_surface
+from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
 from url_cosharing.dismantling import DismantlingResult, GridCell
-from url_cosharing.similarity import ShareMatrix, SimilarityNetwork
+from url_cosharing.similarity import ShareMatrix, SimilarityNetwork, UrlShareRow
+from url_cosharing.telemetry import TelemetryHandles
 
 
 class TestFormatSurface:
@@ -266,3 +273,161 @@ class TestFormatSurface:
         assert not output.endswith('\n')
         # But should have internal newlines
         assert '\n' in output
+
+
+class RecordingCounter:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def add(self, value: int, attributes=None) -> None:
+        self.calls.append((value, attributes))
+
+
+class RecordingHistogram:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def record(self, value: int | float, attributes=None) -> None:
+        self.calls.append((value, attributes))
+
+
+def make_calibrate_telemetry() -> tuple[TelemetryHandles, InMemorySpanExporter]:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    handles = TelemetryHandles(
+        tracer=provider.get_tracer('url_cosharing.tests.calibrate'),
+        meter=object(),  # type: ignore[arg-type]
+        runs_total=RecordingCounter(),  # type: ignore[arg-type]
+        runs_failed_total=RecordingCounter(),  # type: ignore[arg-type]
+        knee_not_found_total=RecordingCounter(),  # type: ignore[arg-type]
+        guardrail_triggered_total=RecordingCounter(),  # type: ignore[arg-type]
+        run_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        stage_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        accounts_raw=RecordingHistogram(),  # type: ignore[arg-type]
+        accounts_eligible=RecordingHistogram(),  # type: ignore[arg-type]
+        urls_eligible=RecordingHistogram(),  # type: ignore[arg-type]
+        graph_edges=RecordingHistogram(),  # type: ignore[arg-type]
+        flagged_accounts=RecordingHistogram(),  # type: ignore[arg-type]
+        cluster_count=RecordingHistogram(),  # type: ignore[arg-type]
+        shutdown_callbacks=(provider.shutdown,),
+    )
+    return handles, exporter
+
+
+class TestCalibrateMainTelemetry:
+    def test_main_telemetry_does_not_change_stdout(self, monkeypatch, capsys) -> None:
+        class FakeDb:
+            def __init__(self, config) -> None:
+                self.config = config
+
+            def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+                return [
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u3', share_count=1),
+                ]
+
+            def fetch_raw_account_count(self, query: str) -> int:
+                return 3
+
+            def close(self) -> None:
+                pass
+
+        app_config = AppConfig(
+            clickhouse=ClickHouseConfig(
+                host='localhost',
+                port=8123,
+                user='default',
+                password='clickhouse',
+                database='default',
+            ),
+            analysis=AnalysisConfig(
+                interval_seconds=3600,
+                resolution=0.05,
+                min_cluster_size=3,
+                jaccard_threshold=0.5,
+                evolution_window_days=7,
+                window_days=7,
+                min_unique_urls=2,
+                min_url_sharers=2,
+                max_url_df_fraction=0.90,
+                edge_epsilon=0.05,
+                edge_quantile_grid=(0.5, 0.9),
+                centrality_quantile_grid=(0.5, 0.9),
+                density_floor=0.5,
+                max_flagged_fraction=0.05,
+                runs_table='url_cosharing_runs',
+                clusters_table='url_cosharing_clusters',
+                membership_table='url_cosharing_membership',
+                source_table='osprey_execution_results',
+            ),
+        )
+        monkeypatch.setattr(calibrate.AppConfig, 'from_env', classmethod(lambda cls: app_config))
+        monkeypatch.setattr(calibrate, 'CosharingDb', FakeDb)
+
+        calibrate.main()
+
+        stdout = capsys.readouterr().out
+        assert stdout.startswith('edge_quantile\tcentrality_quantile\tmin_component_density')
+        assert '# accounts_raw=3 accounts_eligible=3 urls_eligible=3 graph_edges=1' in stdout
+
+    def test_failure_spans_do_not_export_exception_message(self, monkeypatch) -> None:
+        class FailingDb:
+            def __init__(self, config) -> None:
+                self.config = config
+
+            def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+                raise RuntimeError('contains did:plc:abc and https://example.com')
+
+            def close(self) -> None:
+                pass
+
+        app_config = AppConfig(
+            clickhouse=ClickHouseConfig(
+                host='localhost',
+                port=8123,
+                user='default',
+                password='clickhouse',
+                database='default',
+            ),
+            analysis=AnalysisConfig(
+                interval_seconds=3600,
+                resolution=0.05,
+                min_cluster_size=3,
+                jaccard_threshold=0.5,
+                evolution_window_days=7,
+                window_days=7,
+                min_unique_urls=2,
+                min_url_sharers=2,
+                max_url_df_fraction=0.90,
+                edge_epsilon=0.05,
+                edge_quantile_grid=(0.5, 0.9),
+                centrality_quantile_grid=(0.5, 0.9),
+                density_floor=0.5,
+                max_flagged_fraction=0.05,
+                runs_table='url_cosharing_runs',
+                clusters_table='url_cosharing_clusters',
+                membership_table='url_cosharing_membership',
+                source_table='osprey_execution_results',
+            ),
+        )
+        handles, exporter = make_calibrate_telemetry()
+        monkeypatch.setattr(calibrate.AppConfig, 'from_env', classmethod(lambda cls: app_config))
+        monkeypatch.setattr(calibrate, 'CosharingDb', FailingDb)
+        monkeypatch.setattr(calibrate, 'setup_telemetry', lambda config: handles)
+
+        try:
+            with pytest.raises(RuntimeError):
+                calibrate.main()
+
+            for span in exporter.get_finished_spans():
+                exported = f'{span.attributes} {span.events} {span.status.description}'
+                assert 'did:plc:abc' not in exported
+                assert 'https://example.com' not in exported
+                assert 'contains did:plc:abc' not in exported
+        finally:
+            handles.shutdown()
