@@ -45,7 +45,8 @@ docker run --env-file .env url-cosharing
 | `URL_COSHARING_EDGE_QUANTILE_GRID` | `0.50,0.60,0.70,0.80,0.90,0.95,0.99` | Edge-weight quantiles for dismantling grid search |
 | `URL_COSHARING_CENTRALITY_QUANTILE_GRID` | `0.50,0.60,0.70,0.80,0.90,0.95,0.99` | Centrality quantiles for dismantling grid search |
 | `URL_COSHARING_DENSITY_FLOOR` | `0.5` | Minimum component density threshold for dismantling |
-| `URL_COSHARING_MAX_FLAGGED_FRACTION` | `0.02` | Maximum fraction of eligible accounts to flag (guardrail) |
+| `URL_COSHARING_MAX_FLAGGED_FRACTION` | `0.05` | Maximum fraction of eligible accounts to flag (guardrail) |
+| `URL_COSHARING_MAX_FLAGGED_ACCOUNTS` | `750` | Maximum absolute number of accounts to flag; effective cap is `min(max_flagged_fraction × eligible_accounts, max_flagged_accounts)` |
 | `URL_COSHARING_RESOLUTION` | `0.05` | Leiden CPM resolution parameter |
 | `URL_COSHARING_MIN_CLUSTER_SIZE` | `3` | Minimum cluster membership size |
 | `URL_COSHARING_JACCARD_THRESHOLD` | `0.5` | Jaccard similarity threshold for evolution matching |
@@ -59,5 +60,5 @@ docker run --env-file .env url-cosharing
 ## Output schema
 
 - `url_cosharing_clusters` — cluster results with member count, metrics (`mean_edge_similarity`, `subgraph_density`), and evolution tracking
-- `url_cosharing_membership` — daily membership snapshots per cluster (TTL 7 days)
+- `url_cosharing_membership` — daily membership snapshots per cluster (no TTL; retained for post-hoc analysis)
 - `url_cosharing_runs` — run metadata including stage counts, quantile choices, knee-finding result, flagged account count, and cluster count
