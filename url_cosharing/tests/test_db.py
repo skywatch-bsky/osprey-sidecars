@@ -255,6 +255,8 @@ class TestCosharingDb:
             sample_dids=['did:plc:user1', 'did:plc:user2'],
             sample_urls=['https://example.com', 'https://test.com', 'https://other.com'],
             resolution_parameter=0.05,
+            mean_edge_similarity=0.75,
+            subgraph_density=0.5,
             temporal_spread_hours=24.5,
             mean_posting_interval_seconds=3600.0,
         )
@@ -341,6 +343,8 @@ class TestCosharingDb:
             sample_dids=['did:plc:user1'],
             sample_urls=[],
             resolution_parameter=0.05,
+            mean_edge_similarity=0.0,
+            subgraph_density=0.0,
             temporal_spread_hours=0.0,
             mean_posting_interval_seconds=0.0,
         )
