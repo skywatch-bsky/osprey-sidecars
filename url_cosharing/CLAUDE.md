@@ -39,7 +39,7 @@ Functional Core / Imperative Shell:
 ## Contract
 
 - **Input:** `osprey_execution_results` (account DIDs, URL shares, dates)
-- **Output:** `url_cosharing_clusters` (cluster results, metrics + `mean_edge_similarity`, `subgraph_density`, evolution), `url_cosharing_membership` (daily snapshots, TTL 7 days), `url_cosharing_runs` (run metadata)
+- **Output:** `url_cosharing_clusters` (cluster results, metrics + `mean_edge_similarity`, `subgraph_density`, evolution), `url_cosharing_membership` (daily snapshots, no TTL — retained for post-hoc analysis since 2026-07-07), `url_cosharing_runs` (run metadata)
 - **Dependencies:** ClickHouse only. `similarity.py` and `dismantling.py` have no I/O or ClickHouse imports (pure functional core).
 
 ## Commands

@@ -11,9 +11,8 @@ earlier methodology versions.
 
 A run_date's detection window is the window_days days ending the day before
 it, so the earliest backfillable day is bounded by source-table retention.
-Backfilled membership snapshots older than the table's 7-day TTL become
-merge-eligible immediately; only url_cosharing_clusters and url_cosharing_runs
-persist long-term.
+All three output tables persist indefinitely (the membership table's 7-day
+TTL was removed 2026-07-07 to keep snapshots for post-hoc analysis).
 
 Errors abort the run rather than skipping a day — a gap would corrupt
 evolution tracking for the days after it. Re-running the full range is safe.
