@@ -1,10 +1,24 @@
 # pattern: Functional Core
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from url_cosharing.config import AnalysisConfig
 
 
-def fetch_url_shares_query(config: AnalysisConfig) -> str:
+def _window_bounds(config: AnalysisConfig, as_of: date) -> tuple[date, date]:
+    """Detection window for a run_date: the window_days days ending the day
+    before as_of. Explicit date literals (rather than yesterday()) keep the
+    query anchored to the run being computed, which makes historical backfill
+    a matter of passing a past as_of.
+    """
+    window_end = as_of - timedelta(days=1)
+    window_start = window_end - timedelta(days=config.window_days - 1)
+    return window_start, window_end
+
+
+def fetch_url_shares_query(config: AnalysisConfig, as_of: date) -> str:
+    window_start, window_end = _window_bounds(config, as_of)
     return f"""
         WITH url_shares AS (
             SELECT
@@ -14,8 +28,8 @@ def fetch_url_shares_query(config: AnalysisConfig) -> str:
             FROM {config.source_table}
             WHERE Collection = 'app.bsky.feed.post'
                 AND OperationKind = 'create'
-                AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
-                AND toDate(__timestamp) <= yesterday()
+                AND toDate(__timestamp) >= toDate('{window_start}')
+                AND toDate(__timestamp) <= toDate('{window_end}')
                 AND length(FacetLinkList) > 0
             GROUP BY did, url
         ),
@@ -46,7 +60,7 @@ def fetch_url_shares_query(config: AnalysisConfig) -> str:
     """
 
 
-def fetch_raw_account_count_query(config: AnalysisConfig) -> str:
+def fetch_raw_account_count_query(config: AnalysisConfig, as_of: date) -> str:
     """Distinct accounts in the raw rolling window, before eligibility filters.
 
     Mirrors the url_shares CTE population in fetch_url_shares_query. Run
@@ -54,31 +68,33 @@ def fetch_raw_account_count_query(config: AnalysisConfig) -> str:
     attrition; the main query's final output cannot provide it because its
     rows are already filtered.
     """
+    window_start, window_end = _window_bounds(config, as_of)
     return f"""
         SELECT uniqExact(UserId)
         FROM {config.source_table}
         WHERE Collection = 'app.bsky.feed.post'
             AND OperationKind = 'create'
-            AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
-            AND toDate(__timestamp) <= yesterday()
+            AND toDate(__timestamp) >= toDate('{window_start}')
+            AND toDate(__timestamp) <= toDate('{window_end}')
             AND length(FacetLinkList) > 0
     """
 
 
-def fetch_historical_membership_query(config: AnalysisConfig) -> str:
+def fetch_historical_membership_query(config: AnalysisConfig, as_of: date) -> str:
     return f"""
         SELECT
             run_date,
             cluster_id,
             did
         FROM {config.membership_table}
-        WHERE run_date >= today() - {config.evolution_window_days}
-            AND run_date < today()
+        WHERE run_date >= toDate('{as_of}') - {config.evolution_window_days}
+            AND run_date < toDate('{as_of}')
         ORDER BY run_date DESC
     """
 
 
-def fetch_member_timestamps_query(config: AnalysisConfig, dids_placeholder: str) -> str:
+def fetch_member_timestamps_query(config: AnalysisConfig, dids_placeholder: str, as_of: date) -> str:
+    window_start, window_end = _window_bounds(config, as_of)
     return f"""
         SELECT
             UserId AS did,
@@ -86,8 +102,8 @@ def fetch_member_timestamps_query(config: AnalysisConfig, dids_placeholder: str)
         FROM {config.source_table}
         WHERE Collection = 'app.bsky.feed.post'
             AND OperationKind = 'create'
-            AND toDate(__timestamp) >= yesterday() - {config.window_days - 1}
-            AND toDate(__timestamp) <= yesterday()
+            AND toDate(__timestamp) >= toDate('{window_start}')
+            AND toDate(__timestamp) <= toDate('{window_end}')
             AND UserId IN ({dids_placeholder})
         ORDER BY did, ts
     """

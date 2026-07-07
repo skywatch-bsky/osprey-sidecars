@@ -450,3 +450,17 @@ class TestRunCycle:
             assert event.evolution_type != 'death', (
                 f"Death events must be skipped in cluster writes; got evolution_type={event.evolution_type}"
             )
+
+
+class TestRunCycleExplicitRunDate:
+    def test_explicit_run_date_anchors_the_whole_cycle(self, app_config: AppConfig) -> None:
+        """run_cycle(run_date=...) writes and clears rows for that date, not today."""
+        fake_db = FakeDb()
+        target = date(2026, 6, 25)
+
+        run_cycle(fake_db, app_config, run_date=target)
+
+        assert all(run_date == target for _, run_date in fake_db.deleted_run_dates)
+        assert len(fake_db.captured_runs) == 1
+        _, run = fake_db.captured_runs[0]
+        assert run.run_date == target

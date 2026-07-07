@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import date
 
 from url_cosharing.config import AppConfig
 from url_cosharing.db import CosharingDb
@@ -50,9 +51,10 @@ def main() -> None:
     analysis = config.analysis
     db = CosharingDb(config.clickhouse)
     try:
-        rows = db.fetch_url_shares(fetch_url_shares_query(analysis))
+        as_of = date.today()
+        rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of))
         logger.info(f'fetched {len(rows)} share rows')
-        accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis))
+        accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, as_of))
         network = similarity_network(rows, analysis.edge_epsilon)
         result = dismantle(
             network.graph,

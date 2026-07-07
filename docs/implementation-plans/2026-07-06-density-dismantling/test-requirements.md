@@ -2,6 +2,8 @@
 
 > **Superseded (2026-07-07, issue #3):** the URL df ceiling described in this document as a percentile of the df distribution (`max_url_df_pctl` / `quantile(max_url_df_pctl)(df)`) was a mis-transcription of Cinus et al.'s published code and is degenerate on production data. The implemented contract is `max_url_df_fraction` (`URL_COSHARING_MAX_URL_DF_FRACTION`): eligible URLs satisfy `df <= max_url_df_fraction * distinct_account_count` (sklearn `max_df` semantics), applied in SQL only. Do not reintroduce percentile/quantile ceiling logic from this document.
 >
+> **Also amended (2026-07-07, backfill support):** query date anchors changed from ClickHouse-relative `yesterday()`/`today()` to explicit `toDate('YYYY-MM-DD')` literals derived from an `as_of` parameter (the daemon passes today; `python -m url_cosharing.backfill` passes historical dates). Window-bound assertions in AC1.1/AC1.2 now pin literal dates for a fixed `AS_OF`, not `yesterday()` idioms.
+>
 > **Also superseded (2026-07-07, PR #2 review):** the Python defense-in-depth mirror (`filter_shares`) described under AC1.2/AC1.3 was removed entirely. SQL computes eligibility single-pass over the raw window population; its output rows can legitimately fail a naive re-check (an account may retain fewer surviving URLs than `min_unique_urls`, a URL fewer surviving sharers than `min_url_sharers`), so any Python re-filter over SQL-final rows erases valid detections. `fetch_url_shares_query` is the sole filtering authority; `similarity_network` consumes its output unfiltered, pinned by `TestSqlFinalRowsNotRefiltered`. Do not reintroduce Python-side eligibility filtering from this document.
 
 Traces every acceptance criterion in `docs/design-plans/2026-07-06-density-dismantling.md`

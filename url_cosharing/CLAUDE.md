@@ -46,4 +46,5 @@ Functional Core / Imperative Shell:
 
 - `cd url_cosharing && uv run pytest` — Run tests
 - `uv run python -m url_cosharing.calibrate` — Dump density-surface grid for calibration
+- `uv run python -m url_cosharing.backfill START_DATE [END_DATE]` — Recompute historical run_dates (inclusive ISO dates, oldest→newest so evolution chains; overwrites existing rows per run_date; bounded by source-table retention)
 - `docker compose up url-cosharing` — Start sidecar

@@ -67,12 +67,20 @@ def _handle_signal(signum: int, _frame: object) -> None:
     _shutdown = True
 
 
-def run_cycle(db: CosharingDb, config: AppConfig) -> None:
-    run_date = date.today()
+def run_cycle(db: CosharingDb, config: AppConfig, run_date: date | None = None) -> None:
+    """Compute and persist one day's detection results.
+
+    run_date defaults to today (the daemon path). Passing a past date
+    recomputes that day: the detection window is the window_days days ending
+    the day before run_date, and existing rows for run_date are overwritten
+    via the idempotent delete-then-insert below.
+    """
+    if run_date is None:
+        run_date = date.today()
     analysis = config.analysis
 
     logger.info('fetching url shares')
-    rows = db.fetch_url_shares(fetch_url_shares_query(analysis))
+    rows = db.fetch_url_shares(fetch_url_shares_query(analysis, run_date))
     logger.info(f'fetched {len(rows)} share rows')
     if not rows:
         logger.warning(
@@ -80,7 +88,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
             'filters (min_url_sharers, max_url_df_fraction)'
         )
 
-    accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis))
+    accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, run_date))
 
     network = similarity_network(rows, analysis.edge_epsilon)
     logger.info(
@@ -111,7 +119,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     if all_dids:
         sanitized_dids = [_sanitize_did(did) for did in sorted(all_dids)]
         dids_placeholder = ','.join(f"'{did}'" for did in sanitized_dids)
-        timestamps_query = fetch_member_timestamps_query(analysis, dids_placeholder)
+        timestamps_query = fetch_member_timestamps_query(analysis, dids_placeholder, run_date)
         timestamp_rows = db.fetch_member_timestamps(timestamps_query)
 
         member_timestamps: dict[str, list[datetime]] = {}
@@ -126,7 +134,7 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     timestamped_clusters = [compute_temporal_metrics(cluster, member_timestamps) for cluster in clusters]
 
     logger.info('gathering historical membership')
-    history_query = fetch_historical_membership_query(analysis)
+    history_query = fetch_historical_membership_query(analysis, run_date)
     history_rows = db.fetch_historical_membership(history_query)
 
     previous_membership = _latest_previous_membership(history_rows)
