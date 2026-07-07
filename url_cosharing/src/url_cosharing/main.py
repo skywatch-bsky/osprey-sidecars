@@ -73,12 +73,17 @@ def run_cycle(db: CosharingDb, config: AppConfig) -> None:
     logger.info('fetching url shares')
     rows = db.fetch_url_shares(fetch_url_shares_query(analysis))
     logger.info(f'fetched {len(rows)} share rows')
+    if not rows:
+        logger.warning(
+            'fetched 0 share rows; verify source data volume and URL eligibility '
+            'filters (min_url_sharers, max_url_df_fraction)'
+        )
 
     network = similarity_network(
         rows,
         analysis.min_unique_urls,
         analysis.min_url_sharers,
-        analysis.max_url_df_pctl,
+        analysis.max_url_df_fraction,
         analysis.edge_epsilon,
         logger,
     )

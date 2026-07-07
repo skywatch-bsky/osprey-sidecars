@@ -22,7 +22,7 @@ def base_config() -> AnalysisConfig:
         window_days=7,
         min_unique_urls=10,
         min_url_sharers=5,
-        max_url_df_pctl=0.90,
+        max_url_df_fraction=0.90,
         edge_epsilon=0.05,
         edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
         centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -73,7 +73,7 @@ class TestFetchHistoricalMembershipQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -97,7 +97,7 @@ class TestFetchHistoricalMembershipQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -150,7 +150,7 @@ class TestFetchMemberTimestampsQuery:
             window_days=3,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -188,7 +188,7 @@ class TestFetchMemberTimestampsQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -257,7 +257,7 @@ class TestInsertClustersQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -302,7 +302,7 @@ class TestInsertMembershipQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -346,7 +346,7 @@ class TestFetchUrlSharesQuery:
             window_days=1,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -403,7 +403,7 @@ class TestFetchUrlSharesQuery:
             window_days=7,
             min_unique_urls=20,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -433,7 +433,7 @@ class TestFetchUrlSharesQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=10,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -447,13 +447,15 @@ class TestFetchUrlSharesQuery:
         query = fetch_url_shares_query(config)
         assert 'df >= 10' in query
 
-    def test_df_percentile_ceiling_default(self, base_config: AnalysisConfig) -> None:
-        """AC1.3: quantile(0.9)(df) ceiling with default max_url_df_pctl=0.90"""
+    def test_df_ceiling_is_fraction_of_accounts(self, base_config: AnalysisConfig) -> None:
+        """AC1.3: ceiling is max_url_df_fraction of distinct accounts (sklearn max_df
+        semantics per Cinus et al.), never a percentile of the df distribution."""
         query = fetch_url_shares_query(base_config)
-        assert f'quantile({base_config.max_url_df_pctl})(' in query
+        assert 'df <= 0.9 * (SELECT uniqExact(did) FROM url_shares)' in query
+        assert 'quantile' not in query
 
-    def test_df_percentile_ceiling_custom(self) -> None:
-        """AC1.3: custom max_url_df_pctl changes the quantile literal"""
+    def test_df_ceiling_fraction_custom(self) -> None:
+        """AC1.3: custom max_url_df_fraction changes the ceiling literal"""
         config = AnalysisConfig(
             interval_seconds=3600,
             resolution=0.05,
@@ -463,7 +465,7 @@ class TestFetchUrlSharesQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.80,
+            max_url_df_fraction=0.80,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -475,7 +477,7 @@ class TestFetchUrlSharesQuery:
             source_table='osprey_execution_results',
         )
         query = fetch_url_shares_query(config)
-        assert 'quantile(0.8)(' in query
+        assert 'df <= 0.8 * (SELECT uniqExact(did) FROM url_shares)' in query
 
     def test_with_custom_source_table(self) -> None:
         """Custom source_table is used in FROM clause"""
@@ -488,7 +490,7 @@ class TestFetchUrlSharesQuery:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),

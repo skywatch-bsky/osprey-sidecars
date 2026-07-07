@@ -15,7 +15,7 @@ def base_analysis_config() -> AnalysisConfig:
         window_days=7,
         min_unique_urls=10,
         min_url_sharers=5,
-        max_url_df_pctl=0.90,
+        max_url_df_fraction=0.90,
         edge_epsilon=0.05,
         edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
         centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -84,7 +84,7 @@ class TestAnalysisConfig:
         monkeypatch.delenv('URL_COSHARING_WINDOW_DAYS', raising=False)
         monkeypatch.delenv('URL_COSHARING_MIN_UNIQUE_URLS', raising=False)
         monkeypatch.delenv('URL_COSHARING_MIN_URL_SHARERS', raising=False)
-        monkeypatch.delenv('URL_COSHARING_MAX_URL_DF_PCTL', raising=False)
+        monkeypatch.delenv('URL_COSHARING_MAX_URL_DF_FRACTION', raising=False)
         monkeypatch.delenv('URL_COSHARING_EDGE_EPSILON', raising=False)
         monkeypatch.delenv('URL_COSHARING_EDGE_QUANTILE_GRID', raising=False)
         monkeypatch.delenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', raising=False)
@@ -105,7 +105,7 @@ class TestAnalysisConfig:
         assert config.window_days == 7
         assert config.min_unique_urls == 10
         assert config.min_url_sharers == 5
-        assert config.max_url_df_pctl == 0.90
+        assert config.max_url_df_fraction == 0.90
         assert config.edge_epsilon == 0.05
         assert config.edge_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
         assert config.centrality_quantile_grid == (0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99)
@@ -125,7 +125,7 @@ class TestAnalysisConfig:
         monkeypatch.setenv('URL_COSHARING_WINDOW_DAYS', '14')
         monkeypatch.setenv('URL_COSHARING_MIN_UNIQUE_URLS', '20')
         monkeypatch.setenv('URL_COSHARING_MIN_URL_SHARERS', '10')
-        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '0.75')
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_FRACTION', '0.75')
         monkeypatch.setenv('URL_COSHARING_EDGE_EPSILON', '0.10')
         monkeypatch.setenv('URL_COSHARING_EDGE_QUANTILE_GRID', '0.6,0.8')
         monkeypatch.setenv('URL_COSHARING_CENTRALITY_QUANTILE_GRID', '0.5,0.75,0.95')
@@ -146,7 +146,7 @@ class TestAnalysisConfig:
         assert config.window_days == 14
         assert config.min_unique_urls == 20
         assert config.min_url_sharers == 10
-        assert config.max_url_df_pctl == 0.75
+        assert config.max_url_df_fraction == 0.75
         assert config.edge_epsilon == 0.10
         assert config.edge_quantile_grid == (0.6, 0.8)
         assert config.centrality_quantile_grid == (0.5, 0.75, 0.95)
@@ -211,7 +211,7 @@ class TestAnalysisConfig:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
@@ -278,14 +278,14 @@ class TestAnalysisConfig:
 
         assert config.centrality_quantile_grid == (0.5, 0.9)
 
-    def test_max_url_df_pctl_too_high_raises_error(self, monkeypatch) -> None:
-        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '1.5')
+    def test_max_url_df_fraction_too_high_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_FRACTION', '1.5')
 
         with pytest.raises(ValueError, match='must be in'):
             AnalysisConfig.from_env()
 
-    def test_max_url_df_pctl_negative_raises_error(self, monkeypatch) -> None:
-        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_PCTL', '-0.1')
+    def test_max_url_df_fraction_negative_raises_error(self, monkeypatch) -> None:
+        monkeypatch.setenv('URL_COSHARING_MAX_URL_DF_FRACTION', '-0.1')
 
         with pytest.raises(ValueError, match='must be in'):
             AnalysisConfig.from_env()
@@ -367,7 +367,7 @@ class TestAppConfig:
             window_days=7,
             min_unique_urls=10,
             min_url_sharers=5,
-            max_url_df_pctl=0.90,
+            max_url_df_fraction=0.90,
             edge_epsilon=0.05,
             edge_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),
             centrality_quantile_grid=(0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99),

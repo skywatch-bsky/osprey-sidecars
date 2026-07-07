@@ -62,7 +62,7 @@ class AnalysisConfig:
     window_days: int
     min_unique_urls: int
     min_url_sharers: int
-    max_url_df_pctl: float
+    max_url_df_fraction: float
     edge_epsilon: float
     edge_quantile_grid: tuple[float, ...]
     centrality_quantile_grid: tuple[float, ...]
@@ -84,9 +84,9 @@ class AnalysisConfig:
             window_days=int(os.environ.get('URL_COSHARING_WINDOW_DAYS', '7')),
             min_unique_urls=int(os.environ.get('URL_COSHARING_MIN_UNIQUE_URLS', '10')),
             min_url_sharers=int(os.environ.get('URL_COSHARING_MIN_URL_SHARERS', '5')),
-            max_url_df_pctl=_validate_unit_interval(
-                'URL_COSHARING_MAX_URL_DF_PCTL',
-                float(os.environ.get('URL_COSHARING_MAX_URL_DF_PCTL', '0.90')),
+            max_url_df_fraction=_validate_unit_interval(
+                'URL_COSHARING_MAX_URL_DF_FRACTION',
+                float(os.environ.get('URL_COSHARING_MAX_URL_DF_FRACTION', '0.90')),
             ),
             edge_epsilon=_validate_unit_interval(
                 'URL_COSHARING_EDGE_EPSILON',

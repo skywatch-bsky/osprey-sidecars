@@ -40,7 +40,7 @@ docker run --env-file .env url-cosharing
 | `URL_COSHARING_WINDOW_DAYS` | `7` | Rolling window for URL share history (days) |
 | `URL_COSHARING_MIN_UNIQUE_URLS` | `10` | Minimum unique URLs per account to be included |
 | `URL_COSHARING_MIN_URL_SHARERS` | `5` | Minimum accounts sharing a URL to be included |
-| `URL_COSHARING_MAX_URL_DF_PCTL` | `0.90` | Exclude URLs shared by more than this document-frequency percentile |
+| `URL_COSHARING_MAX_URL_DF_FRACTION` | `0.90` | Exclude URLs shared by more than this fraction of accounts (sklearn max_df semantics) |
 | `URL_COSHARING_EDGE_EPSILON` | `0.05` | Similarity threshold for including edges in graph |
 | `URL_COSHARING_EDGE_QUANTILE_GRID` | `0.50,0.60,0.70,0.80,0.90,0.95,0.99` | Edge-weight quantiles for dismantling grid search |
 | `URL_COSHARING_CENTRALITY_QUANTILE_GRID` | `0.50,0.60,0.70,0.80,0.90,0.95,0.99` | Centrality quantiles for dismantling grid search |

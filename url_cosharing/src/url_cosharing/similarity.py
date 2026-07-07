@@ -38,13 +38,18 @@ def filter_shares(
     rows: list[UrlShareRow],
     min_unique_urls: int,
     min_url_sharers: int,
-    max_url_df_pctl: float,
+    max_url_df_fraction: float,
     logger: logging.Logger | None = None,
 ) -> list[UrlShareRow]:
     """Re-apply the SQL prefilters in Python (defense in depth).
 
     Semantics match fetch_url_shares_query: activity and df are both computed
     over the raw input rows in a single pass, then applied together.
+
+    The df ceiling is max_url_df_fraction of distinct accounts (sklearn max_df
+    semantics, matching Cinus et al. WWW '25), not a percentile of the df
+    distribution: URL df distributions are so head-heavy that a low percentile
+    can fall below min_url_sharers, silently emptying the eligible set.
     """
     if not rows:
         return []
@@ -55,8 +60,7 @@ def filter_shares(
         urls_by_did.setdefault(row.did, set()).add(row.url)
         dids_by_url.setdefault(row.url, set()).add(row.did)
 
-    dfs = np.array([len(dids) for dids in dids_by_url.values()])
-    df_ceiling = float(np.quantile(dfs, max_url_df_pctl))
+    df_ceiling = max_url_df_fraction * len(urls_by_did)
 
     active_dids = {did for did, urls in urls_by_did.items() if len(urls) >= min_unique_urls}
     eligible_urls = {
@@ -64,6 +68,13 @@ def filter_shares(
         for url, dids in dids_by_url.items()
         if min_url_sharers <= len(dids) <= df_ceiling
     }
+
+    if not eligible_urls and logger:
+        logger.warning(
+            f'filter_shares: no eligible URLs from {len(dids_by_url)} candidates '
+            f'(min_url_sharers={min_url_sharers}, df_ceiling={df_ceiling}); '
+            'similarity network will be empty'
+        )
 
     kept = [row for row in rows if row.did in active_dids and row.url in eligible_urls]
     if logger:
@@ -135,13 +146,13 @@ def similarity_network(
     rows: list[UrlShareRow],
     min_unique_urls: int,
     min_url_sharers: int,
-    max_url_df_pctl: float,
+    max_url_df_fraction: float,
     edge_epsilon: float,
     logger: logging.Logger | None = None,
 ) -> SimilarityNetwork:
     """End-to-end pipeline: filter, build matrix, TF-IDF, compute similarities."""
     accounts_raw = len({row.did for row in rows})
-    kept = filter_shares(rows, min_unique_urls, min_url_sharers, max_url_df_pctl, logger)
+    kept = filter_shares(rows, min_unique_urls, min_url_sharers, max_url_df_fraction, logger)
     matrix = build_share_matrix(kept)
     tfidf = tfidf_transform(matrix.counts)
     graph = build_similarity_graph(tfidf, matrix.accounts, edge_epsilon)

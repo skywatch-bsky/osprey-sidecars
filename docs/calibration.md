@@ -580,7 +580,7 @@ After applying the change, re-run Query 1 for 3 days. Verify evolution-type mix 
 - **Centrality Quantile Grid (`URL_COSHARING_CENTRALITY_QUANTILE_GRID`):** Default `0.50,0.60,0.70,0.80,0.90,0.95,0.99`. Controls dismantling grid density; same semantics as edge quantile grid.
 - **Min Unique URLs (`URL_COSHARING_MIN_UNIQUE_URLS`):** Default 10. Accounts sharing fewer URLs are excluded; raise to focus on heavy sharers.
 - **Min URL Sharers (`URL_COSHARING_MIN_URL_SHARERS`):** Default 5. URLs shared by fewer accounts are excluded; raise to filter niche URLs.
-- **Max URL DF Percentile (`URL_COSHARING_MAX_URL_DF_PCTL`):** Default 0.90. Excludes viral URLs in top 10%; raise to be more aggressive on viral filtering.
+- **Max URL DF Fraction (`URL_COSHARING_MAX_URL_DF_FRACTION`):** Default 0.90. Excludes URLs shared by more than this fraction of accounts (sklearn max_df semantics; a rarely-binding safety valve — viral downweighting is handled by TF-IDF). Lower to be more aggressive on viral filtering.
 - **Window Days (`URL_COSHARING_WINDOW_DAYS`):** Default 7. Historical window for URL shares; raise to include older data (smoother, less volatile).
 - **Resolution (`URL_COSHARING_RESOLUTION`):** Default 0.05. CPM parameter; see re-tuning procedure above.
 - **Jaccard Threshold (`URL_COSHARING_JACCARD_THRESHOLD`):** Default 0.5 (strict). See "Jaccard threshold guidance" below.

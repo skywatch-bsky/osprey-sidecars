@@ -56,7 +56,7 @@ def main() -> None:
             rows,
             analysis.min_unique_urls,
             analysis.min_url_sharers,
-            analysis.max_url_df_pctl,
+            analysis.max_url_df_fraction,
             analysis.edge_epsilon,
             logger,
         )

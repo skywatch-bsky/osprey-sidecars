@@ -28,7 +28,7 @@ def fetch_url_shares_query(config: AnalysisConfig) -> str:
             SELECT url
             FROM url_df
             WHERE df >= {config.min_url_sharers}
-                AND df <= (SELECT quantile({config.max_url_df_pctl})(df) FROM url_df)
+                AND df <= {config.max_url_df_fraction} * (SELECT uniqExact(did) FROM url_shares)
         ),
         active_accounts AS (
             SELECT did
