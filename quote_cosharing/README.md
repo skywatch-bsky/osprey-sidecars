@@ -42,3 +42,20 @@ docker run --env-file .env quote-cosharing
 
 - `quote_cosharing_clusters` — cluster results with member count, metrics, and evolution tracking
 - `quote_cosharing_membership` — daily membership snapshots per cluster (TTL 7 days)
+
+
+## OpenTelemetry
+
+OpenTelemetry is disabled by default and is operational observability only, not durable domain audit data. Enabling it emits OTLP traces and metrics only; this sidecar does not start a Prometheus endpoint or require a collector unless telemetry is enabled.
+
+Telemetry environment variables:
+
+- `QUOTE_COSHARING_OTEL_ENABLED` (default `false`)
+- `QUOTE_COSHARING_OTEL_SERVICE_NAME` (default `quote-cosharing`)
+- `QUOTE_COSHARING_OTEL_SERVICE_VERSION` (default `0.1.0`)
+- `QUOTE_COSHARING_OTEL_ENVIRONMENT` (default `local`)
+- `QUOTE_COSHARING_OTEL_TRACES_ENABLED` (default follows `QUOTE_COSHARING_OTEL_ENABLED`)
+- `QUOTE_COSHARING_OTEL_METRICS_ENABLED` (default follows `QUOTE_COSHARING_OTEL_ENABLED`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (optional collector endpoint used by the OTel SDK)
+
+Keep telemetry low-cardinality. Never add DIDs, user IDs, account IDs, URLs/domains, quoted URIs, PDS hosts, rkeys, cluster IDs, sample values, table names, SQL/query text, ClickHouse credentials, or exception messages as attributes or metric labels. Package-specific forbidden values include: did, shared_uris, cluster_id.

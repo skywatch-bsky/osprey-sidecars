@@ -41,3 +41,20 @@ docker run --env-file .env url-overdispersion
 | `URL_OVERDISPERSION_BASELINE_DAYS` | `14` | Rolling baseline window in days |
 | `URL_OVERDISPERSION_COLD_START_MIN_DAYS` | `3` | Minimum baseline days to use entity baseline |
 | `URL_OVERDISPERSION_MIN_SHARERS` | `3` | Minimum unique sharers required to score a domain on a given day |
+
+
+## OpenTelemetry
+
+OpenTelemetry is disabled by default and is operational observability only, not durable domain audit data. Enabling it emits OTLP traces and metrics only; this sidecar does not start a Prometheus endpoint or require a collector unless telemetry is enabled.
+
+Telemetry environment variables:
+
+- `URL_OVERDISPERSION_OTEL_ENABLED` (default `false`)
+- `URL_OVERDISPERSION_OTEL_SERVICE_NAME` (default `url-overdispersion`)
+- `URL_OVERDISPERSION_OTEL_SERVICE_VERSION` (default `0.1.0`)
+- `URL_OVERDISPERSION_OTEL_ENVIRONMENT` (default `local`)
+- `URL_OVERDISPERSION_OTEL_TRACES_ENABLED` (default follows `URL_OVERDISPERSION_OTEL_ENABLED`)
+- `URL_OVERDISPERSION_OTEL_METRICS_ENABLED` (default follows `URL_OVERDISPERSION_OTEL_ENABLED`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (optional collector endpoint used by the OTel SDK)
+
+Keep telemetry low-cardinality. Never add DIDs, user IDs, account IDs, URLs/domains, quoted URIs, PDS hosts, rkeys, cluster IDs, sample values, table names, SQL/query text, ClickHouse credentials, or exception messages as attributes or metric labels. Package-specific forbidden values include: domain, sample_urls, sample_dids.

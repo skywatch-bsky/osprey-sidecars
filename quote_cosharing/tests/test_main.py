@@ -403,3 +403,146 @@ class TestRunCycle:
         for run_date, cluster, event in fake_db.captured_clusters:
             assert cluster.temporal_spread_hours >= 0.0
             assert cluster.mean_posting_interval_seconds >= 0.0
+
+
+class RecordingCounter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, dict[str, object] | None]] = []
+
+    def add(self, value: int, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+class RecordingHistogram:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int | float, dict[str, object] | None]] = []
+
+    def record(self, value: int | float, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+@pytest.fixture
+def telemetry_handles():
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from quote_cosharing.telemetry import TelemetryHandles
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    handles = TelemetryHandles(
+        tracer=provider.get_tracer('quote_cosharing.tests'),
+        meter=object(),  # type: ignore[arg-type]
+        runs_total=RecordingCounter(),  # type: ignore[arg-type]
+        runs_failed_total=RecordingCounter(),  # type: ignore[arg-type]
+        run_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        stage_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        pairs_fetched=RecordingHistogram(),  # type: ignore[arg-type]
+        graph_nodes=RecordingHistogram(),  # type: ignore[arg-type]
+        graph_edges=RecordingHistogram(),  # type: ignore[arg-type]
+        cluster_count=RecordingHistogram(),  # type: ignore[arg-type]
+        membership_rows=RecordingHistogram(),  # type: ignore[arg-type]
+        shutdown_callbacks=(provider.shutdown,),
+    )
+    return handles, exporter
+
+
+def _three_pair_cluster() -> list[PairRow]:
+    return [
+        PairRow(
+            date=date(2026, 3, 22),
+            account_a='did:plc:user1',
+            account_b='did:plc:user2',
+            weight=5,
+            newman_weight=1.0,
+            shared_uris=['at://did:plc:secret/app.bsky.feed.post/abc123'],
+        ),
+        PairRow(
+            date=date(2026, 3, 22),
+            account_a='did:plc:user1',
+            account_b='did:plc:user3',
+            weight=4,
+            newman_weight=1.0,
+            shared_uris=['at://did:plc:secret/app.bsky.feed.post/abc123'],
+        ),
+        PairRow(
+            date=date(2026, 3, 22),
+            account_a='did:plc:user2',
+            account_b='did:plc:user3',
+            weight=3,
+            newman_weight=1.0,
+            shared_uris=['at://did:plc:secret/app.bsky.feed.post/abc123'],
+        ),
+    ]
+
+
+def test_run_cycle_records_quote_cosharing_stage_spans_and_metrics(app_config: AppConfig, telemetry_handles) -> None:
+    handles, exporter = telemetry_handles
+    fake_db = FakeDb()
+    fake_db.pairs = _three_pair_cluster()
+    fake_db.timestamp_rows = [
+        MemberTimestamp(did='did:plc:user1', ts=datetime(2026, 3, 21, 12, 0, 0)),
+        MemberTimestamp(did='did:plc:user2', ts=datetime(2026, 3, 21, 13, 0, 0)),
+        MemberTimestamp(did='did:plc:user3', ts=datetime(2026, 3, 21, 14, 0, 0)),
+    ]
+
+    run_cycle(fake_db, app_config, handles)
+
+    span_names = {span.name for span in exporter.get_finished_spans()}
+    expected = {
+        'quote_cosharing.run_cycle',
+        'quote_cosharing.fetch_pairs',
+        'quote_cosharing.build_graph',
+        'quote_cosharing.cluster_graph',
+        'quote_cosharing.fetch_member_timestamps',
+        'quote_cosharing.compute_temporal_metrics',
+        'quote_cosharing.fetch_historical_membership',
+        'quote_cosharing.compute_evolution',
+        'quote_cosharing.delete_stale_run_date',
+        'quote_cosharing.persist_clusters',
+        'quote_cosharing.persist_membership',
+    }
+    assert expected <= span_names
+    assert len(handles.runs_total.calls) == 1
+    assert len(handles.stage_duration_seconds.calls) == 10
+    rendered = (
+        repr(exporter.get_finished_spans())
+        + repr(handles.runs_total.calls)
+        + repr(handles.stage_duration_seconds.calls)
+    )
+    assert 'did:plc:secret' not in rendered
+    assert 'at://did:plc:secret' not in rendered
+
+
+def test_run_cycle_empty_pairs_records_success_without_delete_or_failure(
+    app_config: AppConfig, telemetry_handles
+) -> None:
+    handles, exporter = telemetry_handles
+    fake_db = FakeDb()
+
+    run_cycle(fake_db, app_config, handles)
+
+    assert handles.runs_total.calls == [(1, {'had_pairs': False})]
+    assert handles.runs_failed_total.calls == []
+    assert fake_db.deleted_run_dates == []
+    assert fake_db.captured_clusters == []
+    span_names = {span.name for span in exporter.get_finished_spans()}
+    assert 'quote_cosharing.fetch_pairs' in span_names
+    assert 'quote_cosharing.delete_stale_run_date' not in span_names
+
+
+def test_run_cycle_failure_records_error_type_and_reraises(app_config: AppConfig, telemetry_handles) -> None:
+    handles, _ = telemetry_handles
+    fake_db = FakeDb()
+
+    def fail(_query: str):
+        raise RuntimeError('private failure message')
+
+    fake_db.fetch_pairs = fail
+    with pytest.raises(RuntimeError, match='private failure message'):
+        run_cycle(fake_db, app_config, handles)
+
+    assert handles.runs_failed_total.calls == [(1, {'stage': 'run_cycle', 'error.type': 'RuntimeError'})]
+    assert 'private failure message' not in repr(handles.runs_failed_total.calls)

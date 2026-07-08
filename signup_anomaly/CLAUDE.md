@@ -52,3 +52,12 @@ Cold-start handling: when a PDS has fewer than `cold_start_min_days` of history,
 - dispersion fallback mirrors baseline fallback: entity dispersion when history is sufficient, population dispersion otherwise
 - q_value is the Benjamini–Hochberg adjusted p-value, monotone non-decreasing when p-values are sorted
 - New column `q_value` (Float64) inserted after `p_value` in `pds_signup_anomalies`
+
+
+## OpenTelemetry
+
+`telemetry.py` is imperative shell. Functional core modules must not import OpenTelemetry; keep OTel setup and span/metric helpers in `telemetry.py` and orchestration calls in `main.py`.
+
+Allowed dimensions are fixed stage names, coarse counts, booleans, granularity where applicable, `window_days` where applicable, and `error.type`. Do not emit high-cardinality or sensitive values, including pds_host, sample_dids, DIDs, URLs/domains, quoted URIs, PDS hosts, rkeys, sample arrays, table names, SQL/query text, credentials, or exception messages.
+
+Run tests with `cd signup_anomaly && uv run pytest`.

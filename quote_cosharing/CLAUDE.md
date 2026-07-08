@@ -42,3 +42,12 @@ Pairs in `quote_cosharing_pairs` carry two weights:
 
 - `cd quote_cosharing && uv run pytest` — Run tests
 - `docker compose up quote-cosharing` — Start sidecar
+
+
+## OpenTelemetry
+
+`telemetry.py` is imperative shell. Functional core modules must not import OpenTelemetry; keep OTel setup and span/metric helpers in `telemetry.py` and orchestration calls in `main.py`.
+
+Allowed dimensions are fixed stage names, coarse counts, booleans, granularity where applicable, `window_days` where applicable, and `error.type`. Do not emit high-cardinality or sensitive values, including did, shared_uris, cluster_id, DIDs, URLs/domains, quoted URIs, PDS hosts, rkeys, sample arrays, table names, SQL/query text, credentials, or exception messages.
+
+Run tests with `cd quote_cosharing && uv run pytest`.
