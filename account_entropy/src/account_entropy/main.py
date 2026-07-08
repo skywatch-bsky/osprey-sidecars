@@ -12,6 +12,7 @@ from account_entropy.db import AccountEntropyDb
 from account_entropy.queries import account_activity_query
 from account_entropy.telemetry import (
     TelemetryHandles,
+    low_cardinality_attributes,
     noop_telemetry,
     record_failure,
     record_run_metrics,
@@ -44,7 +45,7 @@ def run_cycle(db: AccountEntropyDb, config: AppConfig, telemetry: TelemetryHandl
 
     with telemetry.tracer.start_as_current_span(
         'account_entropy.run_cycle',
-        attributes={'window_days': config.analysis.window_days},
+        attributes=low_cardinality_attributes({'window_days': config.analysis.window_days}),
         record_exception=False,
         set_status_on_exception=False,
     ) as root_span:

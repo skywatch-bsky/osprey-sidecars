@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -35,6 +36,17 @@ LOW_CARDINALITY_RUN_ATTRIBUTES = {
     'had_rows',
 }
 LOW_CARDINALITY_METRIC_ATTRIBUTES = {'stage', 'granularity', 'had_rows', 'error.type'}
+ALLOWED_STRING_ATTRIBUTE_VALUES = {
+    'stage': {
+        'run_cycle',
+        'fetch_aggregated_rows',
+        'score_rows',
+        'insert_results',
+    },
+    'granularity': {'daily', 'hourly'},
+}
+SHUTDOWN_TIMEOUT_MILLIS = 5_000
+logger = logging.getLogger(__name__)
 FORBIDDEN_ATTRIBUTE_KEYS = {
     'did',
     'user_id',
@@ -73,7 +85,13 @@ class TelemetryHandles:
 
     def shutdown(self) -> None:
         for callback in self.shutdown_callbacks:
-            callback()
+            try:
+                try:
+                    callback(timeout_millis=SHUTDOWN_TIMEOUT_MILLIS)
+                except TypeError:
+                    callback()
+            except Exception as exc:  # pragma: no cover - defensive shutdown guard
+                logger.warning('telemetry shutdown callback failed', extra={'error_type': type(exc).__name__})
 
 
 def _resource(config: TelemetryConfig) -> Resource:
@@ -110,6 +128,14 @@ def setup_telemetry(config: TelemetryConfig) -> TelemetryHandles:
     if not config.enabled or (not config.traces_enabled and not config.metrics_enabled):
         return noop_telemetry()
 
+    try:
+        return _setup_telemetry(config)
+    except Exception as exc:  # pragma: no cover - defensive setup guard
+        logger.warning('telemetry setup failed; falling back to no-op', extra={'error_type': type(exc).__name__})
+        return noop_telemetry()
+
+
+def _setup_telemetry(config: TelemetryConfig) -> TelemetryHandles:
     resource = _resource(config)
     shutdown_callbacks: list[Any] = []
 
@@ -150,7 +176,12 @@ def low_cardinality_attributes(attrs: dict[str, Any], *, include_run_date: bool 
     for key, value in attrs.items():
         if key in FORBIDDEN_ATTRIBUTE_KEYS or key not in allowed or value is None:
             continue
-        if isinstance(value, (str, bool, int, float)):
+        if isinstance(value, str):
+            allowed_values = ALLOWED_STRING_ATTRIBUTE_VALUES.get(key)
+            if allowed_values is not None and value not in allowed_values:
+                continue
+            filtered[key] = value
+        elif isinstance(value, (bool, int, float)):
             filtered[key] = value
     return filtered
 
@@ -164,7 +195,7 @@ def set_run_attributes(span: Span, attrs: dict[str, Any]) -> None:
 def stage_span(handles: TelemetryHandles, name: str, **attrs: Any) -> Iterator[Span]:
     start = time.monotonic()
     span_attrs = low_cardinality_attributes(attrs, include_run_date=True)
-    metric_attrs = low_cardinality_attributes({'stage': name.rsplit('.', 1)[-1]}, include_run_date=False)
+    metric_attrs = low_cardinality_attributes({'stage': name.rsplit('.', 1)[-1], **attrs}, include_run_date=False)
     with handles.tracer.start_as_current_span(
         name,
         attributes=span_attrs,

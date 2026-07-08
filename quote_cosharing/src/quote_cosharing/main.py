@@ -22,6 +22,7 @@ from quote_cosharing.queries import (
 )
 from quote_cosharing.telemetry import (
     TelemetryHandles,
+    low_cardinality_attributes,
     noop_telemetry,
     record_failure,
     record_run_metrics,
@@ -60,7 +61,7 @@ def run_cycle(db: QuoteCosharingDb, config: AppConfig, telemetry: TelemetryHandl
 
     with telemetry.tracer.start_as_current_span(
         'quote_cosharing.run_cycle',
-        attributes={'run_date': run_date.isoformat()},
+        attributes=low_cardinality_attributes({'run_date': run_date.isoformat()}),
         record_exception=False,
         set_status_on_exception=False,
     ) as root_span:

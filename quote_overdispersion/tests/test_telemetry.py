@@ -44,3 +44,52 @@ def test_record_failure_uses_error_type_not_exception_message() -> None:
     record_failure(handles, 'run_cycle', exc)
     assert counter.calls == [(1, {'stage': 'run_cycle', 'error.type': 'RuntimeError'})]
     assert 'private' not in repr(counter.calls)
+
+
+def test_low_cardinality_attributes_drops_unexpected_string_values() -> None:
+    attrs = low_cardinality_attributes({'stage': 'fetch_aggregated_rows', 'error.type': 'ValueError'})
+    assert attrs == {'stage': 'fetch_aggregated_rows', 'error.type': 'ValueError'}
+
+    filtered = low_cardinality_attributes({'stage': 'did:plc:secret'})
+    assert filtered == {}
+
+    filtered_granularity = low_cardinality_attributes({'granularity': 'did:plc:secret'})
+    assert filtered_granularity == {}
+
+
+def test_setup_telemetry_enabled_falls_back_to_noop_on_setup_failure(monkeypatch) -> None:
+    import quote_overdispersion.telemetry as telemetry_module
+
+    def fail_setup(_config):
+        raise RuntimeError('private setup failure')
+
+    monkeypatch.setattr(telemetry_module, '_setup_telemetry', fail_setup)
+    handles = setup_telemetry(
+        TelemetryConfig(
+            enabled=True,
+            service_name='quote-overdispersion',
+            service_version='0.1.0',
+            environment='test',
+            otlp_endpoint=None,
+            traces_enabled=True,
+            metrics_enabled=True,
+        )
+    )
+    handles.runs_total.add(1, {})
+    handles.shutdown()
+
+
+def test_shutdown_runs_remaining_callbacks_when_one_fails() -> None:
+    handles = setup_telemetry(TelemetryConfig.disabled())
+    calls: list[str] = []
+
+    def fail_callback(**_kwargs) -> None:
+        calls.append('fail')
+        raise RuntimeError('private shutdown failure')
+
+    def success_callback(**_kwargs) -> None:
+        calls.append('success')
+
+    object.__setattr__(handles, 'shutdown_callbacks', (fail_callback, success_callback))
+    handles.shutdown()
+    assert calls == ['fail', 'success']

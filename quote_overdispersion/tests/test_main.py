@@ -414,6 +414,9 @@ def test_run_cycle_records_stage_spans_and_metrics(app_config: AppConfig, teleme
     assert len(handles.runs_total.calls) == 2
     assert len(handles.run_duration_seconds.calls) == 2
     assert len(handles.stage_duration_seconds.calls) >= 6
+    stage_metric_attrs = [attrs for _, attrs in handles.stage_duration_seconds.calls if attrs]
+    assert {'stage': 'fetch_aggregated_rows', 'granularity': 'daily'} in stage_metric_attrs
+    assert {'stage': 'fetch_aggregated_rows', 'granularity': 'hourly'} in stage_metric_attrs
     rendered = (
         repr(exporter.get_finished_spans())
         + repr(handles.runs_total.calls)

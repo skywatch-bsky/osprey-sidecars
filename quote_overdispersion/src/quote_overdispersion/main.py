@@ -48,6 +48,13 @@ def run_cycle(db: QuoteOverdispersionDb, config: AppConfig, telemetry: Telemetry
         set_status_on_exception=False,
     ) as root_span:
         try:
+            totals = {
+                'rows_fetched': 0,
+                'rows_scored': 0,
+                'results_inserted': 0,
+                'anomaly_count': 0,
+                'had_rows': False,
+            }
             for granularity, query_fn in [
                 ('daily', daily_aggregation_query),
                 ('hourly', hourly_aggregation_query),
@@ -66,17 +73,6 @@ def run_cycle(db: QuoteOverdispersionDb, config: AppConfig, telemetry: Telemetry
 
                     if not rows:
                         logger.info(f'{granularity}: no rows to score, skipping')
-                        set_run_attributes(
-                            root_span,
-                            {
-                                'granularity': granularity,
-                                'rows_fetched': 0,
-                                'rows_scored': 0,
-                                'results_inserted': 0,
-                                'anomaly_count': 0,
-                                'had_rows': False,
-                            },
-                        )
                         record_run_metrics(
                             telemetry,
                             time.monotonic() - granularity_start,
@@ -98,17 +94,11 @@ def run_cycle(db: QuoteOverdispersionDb, config: AppConfig, telemetry: Telemetry
                         db.insert_results(config.analysis.output_table, results)
                     logger.info(f'{granularity}: wrote {len(results)} results to {config.analysis.output_table}')
 
-                    set_run_attributes(
-                        root_span,
-                        {
-                            'granularity': granularity,
-                            'rows_fetched': len(rows),
-                            'rows_scored': len(results),
-                            'results_inserted': len(results),
-                            'anomaly_count': anomaly_count,
-                            'had_rows': True,
-                        },
-                    )
+                    totals['rows_fetched'] += len(rows)
+                    totals['rows_scored'] += len(results)
+                    totals['results_inserted'] += len(results)
+                    totals['anomaly_count'] += anomaly_count
+                    totals['had_rows'] = True
                     record_run_metrics(
                         telemetry,
                         time.monotonic() - granularity_start,
@@ -119,6 +109,7 @@ def run_cycle(db: QuoteOverdispersionDb, config: AppConfig, telemetry: Telemetry
                         anomaly_count=anomaly_count,
                         had_rows=True,
                     )
+            set_run_attributes(root_span, totals)
         except Exception as exc:
             record_failure(telemetry, 'run_cycle', exc)
             root_span.set_attribute('error.type', type(exc).__name__)
