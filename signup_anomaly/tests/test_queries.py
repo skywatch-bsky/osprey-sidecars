@@ -25,9 +25,9 @@ class TestDailyAggregationQuery:
         assert "ActionName = 'identity'" in query
 
     def test_daily_sample_dids_uses_group_uniq_array(self, base_config: AnalysisConfig) -> None:
-        """sample_dids must use groupUniqArray to avoid duplicate DIDs."""
+        """sample_dids must use bounded groupUniqArray to avoid duplicate DIDs."""
         query = daily_aggregation_query(base_config)
-        assert 'arraySlice(groupUniqArray(UserId), 1, 5) AS sample_dids' in query
+        assert 'groupUniqArray(5)(UserId) AS sample_dids' in query
 
     def test_daily_sample_dids_not_uses_group_array(self, base_config: AnalysisConfig) -> None:
         """The old groupArray pattern must be gone."""
@@ -154,9 +154,9 @@ class TestHourlyAggregationQuery:
         assert "ActionName = 'identity'" in query
 
     def test_hourly_sample_dids_uses_group_uniq_array(self, base_config: AnalysisConfig) -> None:
-        """sample_dids must use groupUniqArray to avoid duplicate DIDs."""
+        """sample_dids must use bounded groupUniqArray to avoid duplicate DIDs."""
         query = hourly_aggregation_query(base_config)
-        assert 'arraySlice(groupUniqArray(UserId), 1, 5) AS sample_dids' in query
+        assert 'groupUniqArray(5)(UserId) AS sample_dids' in query
 
     def test_hourly_sample_dids_not_uses_group_array(self, base_config: AnalysisConfig) -> None:
         """The old groupArray pattern must be gone."""

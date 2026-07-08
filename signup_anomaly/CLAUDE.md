@@ -52,7 +52,7 @@ Cold-start handling: when a PDS has fewer than `cold_start_min_days` of history,
 - dispersion fallback mirrors baseline fallback: entity dispersion when history is sufficient, population dispersion otherwise
 - q_value is the Benjamini–Hochberg adjusted p-value, monotone non-decreasing when p-values are sorted
 - New column `q_value` (Float64) inserted after `p_value` in `pds_signup_anomalies`
-- `sample_dids` contains distinct UserIds (no duplicates), using `groupUniqArray` instead of `groupArray`.
+- `sample_dids` contains up to 5 distinct UserIds (no duplicates), using bounded `groupUniqArray(5)` instead of `groupArray`.
 
 
 ## OpenTelemetry

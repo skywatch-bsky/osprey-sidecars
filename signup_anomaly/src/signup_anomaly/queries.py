@@ -27,7 +27,7 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
                     toDate(__timestamp) AS day,
                     count() AS signup_count,
                     countDistinct(UserId) AS distinct_accounts,
-                    arraySlice(groupUniqArray(UserId), 1, 5) AS sample_dids
+                    groupUniqArray(5)(UserId) AS sample_dids
                 FROM {config.source_table}
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
@@ -124,7 +124,7 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
                     toStartOfHour(__timestamp) AS bucket,
                     count() AS signup_count,
                     countDistinct(UserId) AS distinct_accounts,
-                    arraySlice(groupUniqArray(UserId), 1, 5) AS sample_dids
+                    groupUniqArray(5)(UserId) AS sample_dids
                 FROM {config.source_table}
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
