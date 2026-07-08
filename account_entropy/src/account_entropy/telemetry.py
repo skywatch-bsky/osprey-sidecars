@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -82,13 +83,28 @@ class TelemetryHandles:
 
     def shutdown(self) -> None:
         for callback in self.shutdown_callbacks:
+            _run_shutdown_callback(callback)
+
+
+def _run_shutdown_callback(callback: Any) -> None:
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
             try:
-                try:
-                    callback(timeout_millis=SHUTDOWN_TIMEOUT_MILLIS)
-                except TypeError:
-                    callback()
-            except Exception as exc:  # pragma: no cover - defensive shutdown guard
-                logger.warning('telemetry shutdown callback failed', extra={'error_type': type(exc).__name__})
+                callback(timeout_millis=SHUTDOWN_TIMEOUT_MILLIS)
+            except TypeError:
+                callback()
+        except Exception as exc:  # pragma: no cover - defensive shutdown guard
+            errors.append(exc)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(SHUTDOWN_TIMEOUT_MILLIS / 1_000)
+    if thread.is_alive():
+        logger.warning('telemetry shutdown callback timed out')
+    for exc in errors:
+        logger.warning('telemetry shutdown callback failed', extra={'error_type': type(exc).__name__})
 
 
 def _resource(config: TelemetryConfig) -> Resource:
