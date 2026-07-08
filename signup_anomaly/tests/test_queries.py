@@ -29,6 +29,11 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfDay(__timestamp)' in query
 
+    def test_daily_account_age_filter_upper_bound(self, base_config: AnalysisConfig) -> None:
+        """AccountCreatedAt must be bounded above to exclude future-dated values."""
+        query = daily_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfDay(__timestamp) + INTERVAL 1 DAY' in query
+
     def test_daily_signup_count_uses_distinct(self, base_config: AnalysisConfig) -> None:
         """signup_count must count distinct accounts, not raw events."""
         query = daily_aggregation_query(base_config)
@@ -157,6 +162,11 @@ class TestHourlyAggregationQuery:
         """Only count events where the account was created within the same hour."""
         query = hourly_aggregation_query(base_config)
         assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfHour(__timestamp)' in query
+
+    def test_hourly_account_age_filter_upper_bound(self, base_config: AnalysisConfig) -> None:
+        """AccountCreatedAt must be bounded above to exclude future-dated values."""
+        query = hourly_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfHour(__timestamp) + INTERVAL 1 HOUR' in query
 
     def test_hourly_signup_count_uses_distinct(self, base_config: AnalysisConfig) -> None:
         """signup_count must count distinct accounts, not raw events."""

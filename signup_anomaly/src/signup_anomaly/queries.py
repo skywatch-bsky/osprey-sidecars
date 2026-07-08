@@ -32,6 +32,7 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
                     AND parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfDay(__timestamp)
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfDay(__timestamp) + INTERVAL 1 DAY
                     {exclusion_clause}
                     AND __timestamp >= now() - INTERVAL {config.baseline_days + 1} DAY
                 GROUP BY pds_host, day
@@ -130,6 +131,7 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
                     AND parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfHour(__timestamp)
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfHour(__timestamp) + INTERVAL 1 HOUR
                     {exclusion_clause}
                     AND __timestamp >= now() - INTERVAL {config.baseline_days + 1} DAY
                 GROUP BY pds_host, bucket
