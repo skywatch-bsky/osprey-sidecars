@@ -45,3 +45,20 @@ docker run --env-file .env signup-anomaly
 | `SIGNUP_ANOMALY_HOURLY_P_THRESHOLD` | `0.05` | BH-FDR target (q-value threshold) for hourly anomalies |
 | `SIGNUP_ANOMALY_BASELINE_DAYS` | `7` | Rolling window size (days) for baseline computation |
 | `POLL_INTERVAL_SECONDS` | `300` | Seconds between analysis cycles |
+
+
+## OpenTelemetry
+
+OpenTelemetry is disabled by default and is operational observability only, not durable domain audit data. Enabling it emits OTLP traces and metrics only; this sidecar does not start a Prometheus endpoint or require a collector unless telemetry is enabled.
+
+Telemetry environment variables:
+
+- `SIGNUP_ANOMALY_OTEL_ENABLED` (default `false`)
+- `SIGNUP_ANOMALY_OTEL_SERVICE_NAME` (default `signup-anomaly`)
+- `SIGNUP_ANOMALY_OTEL_SERVICE_VERSION` (default `0.1.0`)
+- `SIGNUP_ANOMALY_OTEL_ENVIRONMENT` (default `local`)
+- `SIGNUP_ANOMALY_OTEL_TRACES_ENABLED` (default follows `SIGNUP_ANOMALY_OTEL_ENABLED`)
+- `SIGNUP_ANOMALY_OTEL_METRICS_ENABLED` (default follows `SIGNUP_ANOMALY_OTEL_ENABLED`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (optional collector endpoint used by the OTel SDK)
+
+Keep telemetry low-cardinality. Never add DIDs, user IDs, account IDs, URLs/domains, quoted URIs, PDS hosts, rkeys, cluster IDs, sample values, table names, SQL/query text, ClickHouse credentials, or exception messages as attributes or metric labels. Package-specific forbidden values include: pds_host, sample_dids.

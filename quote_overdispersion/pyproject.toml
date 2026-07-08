@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Quote post overdispersion anomaly detection sidecar for Osprey"
 requires-python = ">=3.11"
 dependencies = [
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-exporter-otlp>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
     "clickhouse-connect>=0.8.0",
     "scipy>=1.15.0",
 ]

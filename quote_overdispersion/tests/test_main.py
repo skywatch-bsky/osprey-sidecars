@@ -344,3 +344,114 @@ class TestRunCycle:
 
         with pytest.raises(RuntimeError, match='ClickHouse unavailable'):
             run_cycle(fake_db, app_config)
+
+
+class RecordingCounter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, dict[str, object] | None]] = []
+
+    def add(self, value: int, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+class RecordingHistogram:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int | float, dict[str, object] | None]] = []
+
+    def record(self, value: int | float, attributes: dict[str, object] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+@pytest.fixture
+def telemetry_handles():
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from quote_overdispersion.telemetry import TelemetryHandles
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer('quote_overdispersion.tests')
+    handles = TelemetryHandles(
+        tracer=tracer,
+        meter=object(),  # type: ignore[arg-type]
+        runs_total=RecordingCounter(),  # type: ignore[arg-type]
+        runs_failed_total=RecordingCounter(),  # type: ignore[arg-type]
+        run_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        stage_duration_seconds=RecordingHistogram(),  # type: ignore[arg-type]
+        rows_fetched=RecordingHistogram(),  # type: ignore[arg-type]
+        rows_scored=RecordingHistogram(),  # type: ignore[arg-type]
+        results_inserted=RecordingHistogram(),  # type: ignore[arg-type]
+        anomaly_count=RecordingHistogram(),  # type: ignore[arg-type]
+        shutdown_callbacks=(provider.shutdown,),
+    )
+    return handles, exporter
+
+
+def test_run_cycle_records_stage_spans_and_metrics(app_config: AppConfig, telemetry_handles) -> None:
+    handles, exporter = telemetry_handles
+    fake_db = FakeDb()
+    fake_db.daily_rows = [
+        make_aggregated_row(
+            quoted_uri='at://did:plc:secret/app.bsky.feed.post/post',
+            bucket_start=datetime(2026, 3, 20),
+            sample_dids=['did:plc:secret'],
+        )
+    ]
+    fake_db.hourly_rows = []
+
+    run_cycle(fake_db, app_config, handles)
+
+    span_names = {span.name for span in exporter.get_finished_spans()}
+    assert 'quote_overdispersion.run_cycle' in span_names
+    assert 'quote_overdispersion.daily.cycle' in span_names
+    assert 'quote_overdispersion.hourly.cycle' in span_names
+    assert 'quote_overdispersion.fetch_aggregated_rows' in span_names
+    assert 'quote_overdispersion.score_rows' in span_names
+    assert 'quote_overdispersion.insert_results' in span_names
+    assert len(handles.runs_total.calls) == 2
+    assert len(handles.run_duration_seconds.calls) == 2
+    stage_metric_attrs = [attrs for _, attrs in handles.stage_duration_seconds.calls]
+    assert stage_metric_attrs == [
+        {'stage': 'fetch_aggregated_rows', 'granularity': 'daily'},
+        {'stage': 'score_rows', 'granularity': 'daily'},
+        {'stage': 'insert_results', 'granularity': 'daily'},
+        {'stage': 'cycle', 'granularity': 'daily'},
+        {'stage': 'fetch_aggregated_rows', 'granularity': 'hourly'},
+        {'stage': 'cycle', 'granularity': 'hourly'},
+    ]
+    rendered = (
+        repr(exporter.get_finished_spans())
+        + repr(handles.runs_total.calls)
+        + repr(handles.stage_duration_seconds.calls)
+    )
+    for secret in ['did:plc:secret', 'secret.example', 'https://secret.example']:
+        assert secret not in rendered
+
+
+def test_run_cycle_no_data_records_success_not_failure(app_config: AppConfig, telemetry_handles) -> None:
+    handles, _ = telemetry_handles
+    fake_db = FakeDb()
+
+    run_cycle(fake_db, app_config, handles)
+
+    assert len(handles.runs_total.calls) == 2
+    assert handles.runs_failed_total.calls == []
+    assert fake_db.captured_results == []
+
+
+def test_run_cycle_failure_records_error_type_and_reraises(app_config: AppConfig, telemetry_handles) -> None:
+    handles, _ = telemetry_handles
+    fake_db = FakeDb()
+
+    def fail(_query: str):
+        raise RuntimeError('private failure message')
+
+    fake_db.fetch_aggregated_rows = fail
+    with pytest.raises(RuntimeError, match='private failure message'):
+        run_cycle(fake_db, app_config, handles)
+
+    assert handles.runs_failed_total.calls == [(1, {'stage': 'run_cycle', 'error.type': 'RuntimeError'})]
+    assert 'private failure message' not in repr(handles.runs_failed_total.calls)
