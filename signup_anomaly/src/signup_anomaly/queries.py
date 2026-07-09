@@ -25,12 +25,14 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
                 SELECT
                     PdsHost AS pds_host,
                     toDate(__timestamp) AS day,
-                    count() AS signup_count,
+                    countDistinct(UserId) AS signup_count,
                     countDistinct(UserId) AS distinct_accounts,
                     groupUniqArray(5)(UserId) AS sample_dids
                 FROM {config.source_table}
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfDay(__timestamp)
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfDay(__timestamp) + INTERVAL 1 DAY
                     {exclusion_clause}
                     AND __timestamp >= now() - INTERVAL {config.baseline_days + 1} DAY
                 GROUP BY pds_host, day
@@ -122,12 +124,14 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
                 SELECT
                     PdsHost AS pds_host,
                     toStartOfHour(__timestamp) AS bucket,
-                    count() AS signup_count,
+                    countDistinct(UserId) AS signup_count,
                     countDistinct(UserId) AS distinct_accounts,
                     groupUniqArray(5)(UserId) AS sample_dids
                 FROM {config.source_table}
                 WHERE ActionName = 'identity'
                     AND PdsHost IS NOT NULL
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfHour(__timestamp)
+                    AND parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfHour(__timestamp) + INTERVAL 1 HOUR
                     {exclusion_clause}
                     AND __timestamp >= now() - INTERVAL {config.baseline_days + 1} DAY
                 GROUP BY pds_host, bucket
