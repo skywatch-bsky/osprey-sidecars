@@ -24,6 +24,16 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert "ActionName = 'identity'" in query
 
+    def test_daily_sample_dids_uses_group_uniq_array(self, base_config: AnalysisConfig) -> None:
+        """sample_dids must use bounded groupUniqArray to avoid duplicate DIDs."""
+        query = daily_aggregation_query(base_config)
+        assert 'groupUniqArray(5)(UserId) AS sample_dids' in query
+
+    def test_daily_sample_dids_not_uses_group_array(self, base_config: AnalysisConfig) -> None:
+        """The old groupArray pattern must be gone."""
+        query = daily_aggregation_query(base_config)
+        assert 'arraySlice(groupArray(UserId)' not in query
+
     def test_daily_includes_account_age_filter(self, base_config: AnalysisConfig) -> None:
         """Only count events where the account was created on the same day."""
         query = daily_aggregation_query(base_config)
@@ -157,6 +167,16 @@ class TestHourlyAggregationQuery:
     def test_includes_identity_filter(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert "ActionName = 'identity'" in query
+
+    def test_hourly_sample_dids_uses_group_uniq_array(self, base_config: AnalysisConfig) -> None:
+        """sample_dids must use bounded groupUniqArray to avoid duplicate DIDs."""
+        query = hourly_aggregation_query(base_config)
+        assert 'groupUniqArray(5)(UserId) AS sample_dids' in query
+
+    def test_hourly_sample_dids_not_uses_group_array(self, base_config: AnalysisConfig) -> None:
+        """The old groupArray pattern must be gone."""
+        query = hourly_aggregation_query(base_config)
+        assert 'arraySlice(groupArray(UserId)' not in query
 
     def test_hourly_includes_account_age_filter(self, base_config: AnalysisConfig) -> None:
         """Only count events where the account was created within the same hour."""
