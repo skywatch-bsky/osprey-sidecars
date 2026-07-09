@@ -24,6 +24,21 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert "ActionName = 'identity'" in query
 
+    def test_daily_includes_account_age_filter(self, base_config: AnalysisConfig) -> None:
+        """Only count events where the account was created on the same day."""
+        query = daily_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfDay(__timestamp)' in query
+
+    def test_daily_account_age_filter_upper_bound(self, base_config: AnalysisConfig) -> None:
+        """AccountCreatedAt must be bounded above to exclude future-dated values."""
+        query = daily_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfDay(__timestamp) + INTERVAL 1 DAY' in query
+
+    def test_daily_signup_count_uses_distinct(self, base_config: AnalysisConfig) -> None:
+        """signup_count must count distinct accounts, not raw events."""
+        query = daily_aggregation_query(base_config)
+        assert 'countDistinct(UserId) AS signup_count' in query
+
     def test_includes_pds_host_not_null_filter(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
         assert 'PdsHost IS NOT NULL' in query
@@ -142,6 +157,21 @@ class TestHourlyAggregationQuery:
     def test_includes_identity_filter(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
         assert "ActionName = 'identity'" in query
+
+    def test_hourly_includes_account_age_filter(self, base_config: AnalysisConfig) -> None:
+        """Only count events where the account was created within the same hour."""
+        query = hourly_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) >= toStartOfHour(__timestamp)' in query
+
+    def test_hourly_account_age_filter_upper_bound(self, base_config: AnalysisConfig) -> None:
+        """AccountCreatedAt must be bounded above to exclude future-dated values."""
+        query = hourly_aggregation_query(base_config)
+        assert 'parseDateTime64BestEffortOrNull(AccountCreatedAt) < toStartOfHour(__timestamp) + INTERVAL 1 HOUR' in query
+
+    def test_hourly_signup_count_uses_distinct(self, base_config: AnalysisConfig) -> None:
+        """signup_count must count distinct accounts, not raw events."""
+        query = hourly_aggregation_query(base_config)
+        assert 'countDistinct(UserId) AS signup_count' in query
 
     def test_includes_pds_host_not_null_filter(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
