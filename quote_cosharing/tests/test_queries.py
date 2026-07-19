@@ -1,4 +1,6 @@
 # pattern: Functional Core
+from datetime import date
+
 import pytest
 
 from quote_cosharing.config import AnalysisConfig
@@ -9,6 +11,8 @@ from quote_cosharing.queries import (
     insert_clusters_query,
     insert_membership_query,
 )
+
+AS_OF = date(2026, 7, 18)
 
 
 @pytest.fixture
@@ -94,30 +98,31 @@ class TestFetchPairsQuery:
 
 class TestFetchHistoricalMembershipQuery:
     def test_returns_string(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
+        query = fetch_historical_membership_query(base_config, AS_OF)
         assert isinstance(query, str)
         assert len(query) > 0
 
     def test_uses_membership_table_from_config(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
+        query = fetch_historical_membership_query(base_config, AS_OF)
         assert base_config.membership_table in query
 
     def test_uses_evolution_window_days_from_config(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
-        assert f'today() - {base_config.evolution_window_days}' in query
+        query = fetch_historical_membership_query(base_config, AS_OF)
+        assert f"toDate('{AS_OF}') - {base_config.evolution_window_days}" in query
 
-    def test_uses_today_function(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
-        assert 'today()' in query
+    def test_anchors_to_as_of_not_today(self, base_config: AnalysisConfig) -> None:
+        query = fetch_historical_membership_query(base_config, AS_OF)
+        assert f"toDate('{AS_OF}')" in query
+        assert 'today()' not in query
 
     def test_selects_all_required_columns(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
+        query = fetch_historical_membership_query(base_config, AS_OF)
         assert 'run_date' in query
         assert 'cluster_id' in query
         assert 'did' in query
 
     def test_orders_by_run_date_desc(self, base_config: AnalysisConfig) -> None:
-        query = fetch_historical_membership_query(base_config)
+        query = fetch_historical_membership_query(base_config, AS_OF)
         assert 'ORDER BY run_date DESC' in query
 
     def test_with_custom_table_name(self) -> None:
@@ -134,7 +139,7 @@ class TestFetchHistoricalMembershipQuery:
             membership_table='custom_membership',
             source_table='osprey_execution_results',
         )
-        query = fetch_historical_membership_query(config)
+        query = fetch_historical_membership_query(config, AS_OF)
         assert 'custom_membership' in query
 
     def test_with_custom_evolution_window_days(self) -> None:
@@ -151,8 +156,8 @@ class TestFetchHistoricalMembershipQuery:
             membership_table='quote_cosharing_membership',
             source_table='osprey_execution_results',
         )
-        query = fetch_historical_membership_query(config)
-        assert 'today() - 14' in query
+        query = fetch_historical_membership_query(config, AS_OF)
+        assert f"toDate('{AS_OF}') - 14" in query
 
 
 class TestFetchMemberTimestampsQuery:

@@ -66,8 +66,8 @@ class AnalysisConfig:
         watchlist_raw = os.environ.get('URL_OVERDISPERSION_WATCHLIST_DOMAINS', '')
         return cls(
             interval_seconds=int(os.environ.get('URL_OVERDISPERSION_INTERVAL_SECONDS', '900')),
-            volume_p_threshold=float(os.environ.get('URL_OVERDISPERSION_VOLUME_P_THRESHOLD', '0.01')),
-            density_p_threshold=float(os.environ.get('URL_OVERDISPERSION_DENSITY_P_THRESHOLD', '0.01')),
+            volume_p_threshold=float(os.environ.get('URL_OVERDISPERSION_VOLUME_P_THRESHOLD', '0.05')),
+            density_p_threshold=float(os.environ.get('URL_OVERDISPERSION_DENSITY_P_THRESHOLD', '0.05')),
             baseline_days=int(os.environ.get('URL_OVERDISPERSION_BASELINE_DAYS', '14')),
             cold_start_min_days=int(os.environ.get('URL_OVERDISPERSION_COLD_START_MIN_DAYS', '3')),
             min_sharers=int(os.environ.get('URL_OVERDISPERSION_MIN_SHARERS', '3')),

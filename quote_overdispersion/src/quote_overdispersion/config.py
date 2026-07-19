@@ -59,8 +59,8 @@ class AnalysisConfig:
             interval_seconds=int(os.environ.get('QUOTE_OVERDISPERSION_INTERVAL_SECONDS', '900')),
             volume_p_threshold=float(os.environ.get('QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD', '0.01')),
             density_p_threshold=float(os.environ.get('QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD', '0.01')),
-            baseline_days=int(os.environ.get('QUOTE_OVERDISPERSION_BASELINE_DAYS', '14')),
-            cold_start_min_days=int(os.environ.get('QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS', '3')),
+            baseline_days=int(os.environ.get('QUOTE_OVERDISPERSION_BASELINE_DAYS', '7')),
+            cold_start_min_days=int(os.environ.get('QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS', '1')),
             min_sharers=int(os.environ.get('QUOTE_OVERDISPERSION_MIN_SHARERS', '3')),
             source_table=_validate_table_name(
                 os.environ.get('QUOTE_OVERDISPERSION_SOURCE_TABLE', 'osprey_execution_results'),

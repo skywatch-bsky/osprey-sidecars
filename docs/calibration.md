@@ -240,9 +240,9 @@ ORDER BY run_date DESC, granularity;
 
 ### Tuning Levers
 
-- **FDR targets (`URL_OVERDISPERSION_VOLUME_P_THRESHOLD`, `URL_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.01. Independent control over volume and density strictness.
+- **FDR targets (`URL_OVERDISPERSION_VOLUME_P_THRESHOLD`, `URL_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.05. BH-FDR at 0.05 allows ~5% false discovery rate, which should bring flag rates into the 1–5% target range. The previous default of 0.01 was too conservative, producing 0.2–0.3% flag rates. Independent control over volume and density strictness.
 - **Baseline days (`URL_OVERDISPERSION_BASELINE_DAYS`):** Default 14 for URL (longer than signup due to sparser domain-specific events). Increase to 21 for volatile domains; decrease to 7 for faster response.
-- **Min sharers (`URL_OVERDISPERSION_MIN_SHARERS`):** Default 3; filters scored rows (final WHERE clause only, not baseline construction). Increase to 5 to focus on more-shared domains; decrease to 2 to broaden coverage.
+- **Min sharers (`URL_OVERDISPERSION_MIN_SHARERS`):** Default 3; filters scored rows (final WHERE clause only, not baseline construction). Note: the current SQL restricts the domain population to domains meeting current-bucket `min_sharers` before building baselines. Lowering from 3 to 2 would broaden coverage but may introduce noisier baselines. If flag rates remain below target after the FDR threshold change, consider reducing `min_sharers` as a secondary lever.
 - **Cold-start threshold (`URL_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 3.
 
 ### Escalation
@@ -324,6 +324,7 @@ ORDER BY run_date DESC, granularity, pct_of_batch DESC;
 
 **Healthy ranges:**
 - Population baseline may be 50–70%+ even after multiple days (expected for short-lived entities). This is normal.
+- Quote overdispersion uses shorter baseline windows than URL overdispersion (7-day lookback, 1-day cold start) because quoted posts are short-lived. Entity baseline rates should be higher than with the previous 14-day/3-day defaults, but population baseline dominance remains expected.
 - If entity baseline approaches 70%+ after 3 days, quoted posts are being tracked longer than design expectation; verify that the age-out logic in the query is working.
 
 #### Query 4: Dispersion factor distribution
@@ -348,9 +349,9 @@ ORDER BY run_date DESC, granularity;
 ### Tuning Levers
 
 - **FDR targets (`QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD`, `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.01.
-- **Baseline days (`QUOTE_OVERDISPERSION_BASELINE_DAYS`):** Default 14, same as URL. May be reduced to 7 for faster response to new quoted posts.
+- **Baseline days (`QUOTE_OVERDISPERSION_BASELINE_DAYS`):** Default 7. Shorter than URL overdispersion (14) because quoted posts are short-lived — most don't survive 3 days. A 7-day lookback allows entity baselines for any URI quoted on consecutive days.
 - **Min sharers (`QUOTE_OVERDISPERSION_MIN_SHARERS`):** Default 3 (same rationale as URL).
-- **Cold-start threshold (`QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 3.
+- **Cold-start threshold (`QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 1. Lower than URL overdispersion (3) because a 1-day baseline is weak but better than population fallback for volatility reduction. A quoted URI quoted on two consecutive days qualifies for an entity baseline.
 
 ### Escalation
 
@@ -409,18 +410,23 @@ LIMIT 20;
 
 ```sql
 SELECT
-    countIf(is_bot_like = 1 AND hourly_flag = 1) as hourly_only,
-    countIf(is_bot_like = 1 AND interval_flag = 1 AND cv_flag = 0) as interval_only,
-    countIf(is_bot_like = 1 AND cv_flag = 1 AND interval_flag = 0) as cv_only,
-    countIf(is_bot_like = 1 AND interval_flag = 1 AND cv_flag = 1) as both_interval_and_cv,
-    countIf(is_bot_like = 1) as total_bot_like
+    countIf(is_bot_like = 1 AND hourly_flag = 1 AND interval_flag = 0 AND cv_flag = 0) AS hourly_only,
+    countIf(is_bot_like = 1 AND hourly_flag = 1 AND interval_flag = 1 AND cv_flag = 0) AS interval_only,
+    countIf(is_bot_like = 1 AND hourly_flag = 1 AND interval_flag = 0 AND cv_flag = 1) AS cv_only,
+    countIf(is_bot_like = 1 AND hourly_flag = 1 AND interval_flag = 1 AND cv_flag = 1) AS both_interval_and_cv,
+    countIf(is_bot_like = 1) AS total_bot_like,
+    countIf(hourly_flag = 1) AS hourly_flagged_total
 FROM account_entropy_results
 WHERE toDate(run_timestamp) = today();
 ```
 
 **Healthy ranges:**
-- Bot-like decisions should be distributed across all three signals; if one signal accounts for >80% of flags, that threshold may be too loose.
+- Bot-like decisions should be distributed across the secondary signals (interval and CV); if one accounts for >80% of flags, that threshold may be too loose.
 - The conjunction rule (hourly_flag AND (interval_flag OR cv_flag)) requires hourly entropy to be high (disordered posting) and *either* low inter-post randomness or metronomic CV to trigger bot-like. This filters out seasonal peak posters.
+- The `hourly_only` category (interval_flag=0 AND cv_flag=0) is structurally zero for bot-like rows because `is_bot_like` requires at least one of interval_flag or cv_flag. It is included for completeness of the partition; the four categories are mutually exclusive and exhaustive over bot-like rows.
+- The `hourly_flagged_total` column shows how many accounts pass the hourly gate regardless of bot-like status. A large gap between `hourly_flagged_total` and `total_bot_like` is expected (most high-entropy accounts are human). If `hourly_flagged_total` itself is very high (>10% of scored accounts), the hourly threshold (0.85) may be too permissive for low-N accounts where `log2(min(N, 24))` normalization inflates scores.
+
+**Note on attribution:** The predicates above are mutually exclusive by construction — each bot-like row falls into exactly one category defined by the (interval_flag, cv_flag) pair. Previous versions of this query used `is_bot_like = 1 AND hourly_flag = 1` for the `hourly_only` category, which was tautological (is_bot_like already implies hourly_flag=1) and counted all bot-like rows, not just those driven by hourly entropy alone. Always use the full mutually exclusive predicates when decomposing flag attribution.
 
 ### Tuning Levers
 
@@ -432,9 +438,10 @@ WHERE toDate(run_timestamp) = today();
 ### Escalation
 
 If bot-like rate is unexpectedly high (>5%):
-1. Decompose by signal (Query 3) to identify the dominant driver.
+1. Decompose by signal (Query 3) to identify the dominant driver. Ensure the attribution query uses mutually exclusive predicates (the four categories must partition all bot-like rows).
 2. Check that entropies are normalized correctly: raw `hourly_entropy` should be in bits (0–log₂24 ≈ 4.58), normalized should be [0, 1].
 3. Verify Miller–Madow correction is applied: `hourly_entropy_norm` should incorporate `(K_occupied − 1) / (2 * N * ln 2)` bias term (where N is post count).
+4. If attribution shows a single signal dominating, investigate whether the hourly threshold (0.85) is too permissive for low-N accounts where `log2(min(N, 24))` normalization inflates scores. Threshold tuning should follow accurate attribution data from the fixed Query 3, not precede it.
 
 ---
 

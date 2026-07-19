@@ -27,7 +27,7 @@ Functional Core / Imperative Shell:
 ## Methodology
 
 ### Volume Testing
-- **Baseline:** Median daily quote count (rolling 14-day window, densified with zeros)
+- **Baseline:** Median daily quote count (rolling 7-day window, densified with zeros)
 - **Test:** Negative binomial with method-of-moments dispersion factor; Poisson when variance ≤ mean
 - **One-sided:** Upper tail (high volume anomaly)
 
@@ -38,7 +38,7 @@ Functional Core / Imperative Shell:
 - **Known approximation:** First share is always unique (dependent event); model treats all sharers as independent
 
 ### Baseline Selection
-- **Entity baseline:** Used when ≥ 3 days of rolling data exist AND rolling median volume > 0 AND rolling mean density > 0
+- **Entity baseline:** Used when ≥ 1 day of rolling data exist AND rolling median volume > 0 AND rolling mean density > 0
 - **Population baseline:** Used when entity baseline unavailable; computed over today's scored quoted posts in the same batch
 - **Fallback:** Returns zero baseline (p-value = 1.0 for all tests)
 
@@ -51,7 +51,7 @@ Functional Core / Imperative Shell:
 ### Baseline Densification
 - **Dense grid:** All (quoted_uri, day) pairs from first-seen through today, with zero volume/NULL density for inactive days
 - **min_sharers isolation:** Applied only to today's scored rows (the final WHERE clause), not to historical baseline construction
-- **Rolling window:** 14-day entity lookback, 14-hour hourly lookback partitioned by hour-of-day
+- **Rolling window:** 7-day entity lookback, 14-hour hourly lookback partitioned by hour-of-day
 - **Window sampling:** arraySlice to first 5 sample user DIDs per (quoted_uri, bucket)
 
 ## Output Columns
