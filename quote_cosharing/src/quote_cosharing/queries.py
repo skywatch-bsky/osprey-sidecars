@@ -1,6 +1,8 @@
 # pattern: Functional Core
 from __future__ import annotations
 
+from datetime import date
+
 from quote_cosharing.config import AnalysisConfig
 
 
@@ -18,15 +20,15 @@ def fetch_pairs_query(config: AnalysisConfig) -> str:
     """
 
 
-def fetch_historical_membership_query(config: AnalysisConfig) -> str:
+def fetch_historical_membership_query(config: AnalysisConfig, as_of: date) -> str:
     return f"""
         SELECT
             run_date,
             cluster_id,
             did
         FROM {config.membership_table}
-        WHERE run_date >= today() - {config.evolution_window_days}
-            AND run_date < today()
+        WHERE run_date >= toDate('{as_of}') - {config.evolution_window_days}
+            AND run_date < toDate('{as_of}')
         ORDER BY run_date DESC
     """
 
