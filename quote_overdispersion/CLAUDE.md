@@ -39,14 +39,14 @@ Functional Core / Imperative Shell:
 
 ### Baseline Selection
 - **Entity baseline:** Used when ≥ 1 day of rolling data exist AND rolling median volume > 0 AND rolling mean density > 0
-- **Population baseline:** Used when entity baseline unavailable; computed over today's scored quoted posts in the same batch
+- **Population baseline:** Used when entity baseline unavailable; computed cross-sectionally over all scored quoted posts today (median observed volume, cross-sectional dispersion clamped at 20.0, cross-sectional density variance)
 - **Fallback:** Returns zero baseline (p-value = 1.0 for all tests)
 
 ### FDR Control
 - **Two-pass per cycle:** Score all rows with raw p-values, then adjust volume and density separately via Benjamini–Hochberg
-- **Per-signal decision:** Anomaly when volume q-value < target OR density q-value < target
+- **Per-signal decision:** Anomaly when volume q-value < 0.05 OR density q-value < 0.05
 - **Granularity separation:** Daily and hourly cycles run independently; each produces a separate BH family
-- **Population scope:** Population medians computed only over today's scored quoted posts (≥ 3 unique sharers)
+- **Population scope:** Cross-sectional stats computed over all scored quoted posts today (≥ 3 unique sharers, total_shares > 0)
 
 ### Baseline Densification
 - **Dense grid:** All (quoted_uri, day) pairs from first-seen through today, with zero volume/NULL density for inactive days

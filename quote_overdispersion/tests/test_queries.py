@@ -9,10 +9,10 @@ from quote_overdispersion.queries import daily_aggregation_query, hourly_aggrega
 def base_config() -> AnalysisConfig:
     return AnalysisConfig(
         interval_seconds=900,
-        volume_p_threshold=0.01,
-        density_p_threshold=0.01,
-        baseline_days=14,
-        cold_start_min_days=3,
+        volume_p_threshold=0.05,
+        density_p_threshold=0.05,
+        baseline_days=7,
+        cold_start_min_days=1,
         min_sharers=3,
         source_table='osprey_execution_results',
         output_table='quote_overdispersion_results',
@@ -41,9 +41,30 @@ class TestDailyAggregationQuery:
         query = daily_aggregation_query(base_config)
         assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING' in query
 
-    def test_uses_cold_start_threshold_from_config(self, base_config: AnalysisConfig) -> None:
+    def test_population_stats_uses_cross_sectional_values(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
-        assert f'>= {base_config.cold_start_min_days}' in query
+        assert 'median(total_shares) AS population_volume_median' in query
+        assert 'varPop(sharer_density) AS population_density_variance' in query
+
+    def test_population_stats_no_baseline_buckets_filter(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        # baseline_buckets_available is still in the baseline CTE SELECT, but the
+        # population_stats filter on it has been removed
+        population_section = query.split('population_stats AS (')[1]
+        assert 'baseline_buckets_available >=' not in population_section
+
+    def test_population_stats_filters_total_shares_positive(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'AND total_shares > 0' in query
+
+    def test_population_stats_dispersion_from_varpop(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'varPop(total_shares) / avg(total_shares)' in query
+        assert 'varPop(sharer_density)' in query
+
+    def test_population_stats_dispersion_clamped(self, base_config: AnalysisConfig) -> None:
+        query = daily_aggregation_query(base_config)
+        assert 'least(varPop(total_shares) / avg(total_shares), 20.0)' in query
 
     def test_uses_date_bucketing(self, base_config: AnalysisConfig) -> None:
         query = daily_aggregation_query(base_config)
@@ -109,10 +130,10 @@ class TestDailyAggregationQuery:
     def test_with_custom_min_sharers(self) -> None:
         config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
-            baseline_days=14,
-            cold_start_min_days=3,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
+            baseline_days=7,
+            cold_start_min_days=1,
             min_sharers=10,
             source_table='osprey_execution_results',
             output_table='quote_overdispersion_results',
@@ -124,10 +145,10 @@ class TestDailyAggregationQuery:
     def test_with_custom_table_names(self) -> None:
         config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
-            baseline_days=14,
-            cold_start_min_days=3,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
+            baseline_days=7,
+            cold_start_min_days=1,
             min_sharers=3,
             source_table='custom_execution_results',
             output_table='custom_output',
@@ -164,10 +185,28 @@ class TestHourlyAggregationQuery:
         assert f'ROWS BETWEEN {base_config.baseline_days} PRECEDING' in query
         assert f'ROWS BETWEEN {base_config.baseline_days * 24} PRECEDING' not in query
 
-    def test_uses_cold_start_threshold_unscaled(self, base_config: AnalysisConfig) -> None:
+    def test_population_stats_uses_cross_sectional_values(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
-        assert f'>= {base_config.cold_start_min_days}' in query
-        assert f'>= {base_config.cold_start_min_days * 24}' not in query
+        assert 'median(total_shares) AS population_volume_median' in query
+        assert 'varPop(sharer_density) AS population_density_variance' in query
+
+    def test_population_stats_no_baseline_buckets_filter(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        population_section = query.split('population_stats AS (')[1]
+        assert 'baseline_buckets_available >=' not in population_section
+
+    def test_population_stats_filters_total_shares_positive(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'AND total_shares > 0' in query
+
+    def test_population_stats_dispersion_from_varpop(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'varPop(total_shares) / avg(total_shares)' in query
+        assert 'varPop(sharer_density)' in query
+
+    def test_population_stats_dispersion_clamped(self, base_config: AnalysisConfig) -> None:
+        query = hourly_aggregation_query(base_config)
+        assert 'least(varPop(total_shares) / avg(total_shares), 20.0)' in query
 
     def test_uses_hour_bucketing(self, base_config: AnalysisConfig) -> None:
         query = hourly_aggregation_query(base_config)
@@ -226,10 +265,10 @@ class TestHourlyAggregationQuery:
     def test_with_custom_min_sharers(self) -> None:
         config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
-            baseline_days=14,
-            cold_start_min_days=3,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
+            baseline_days=7,
+            cold_start_min_days=1,
             min_sharers=10,
             source_table='osprey_execution_results',
             output_table='quote_overdispersion_results',
@@ -241,10 +280,10 @@ class TestHourlyAggregationQuery:
     def test_with_custom_table_names(self) -> None:
         config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
-            baseline_days=14,
-            cold_start_min_days=3,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
+            baseline_days=7,
+            cold_start_min_days=1,
             min_sharers=3,
             source_table='custom_execution_results',
             output_table='custom_output',

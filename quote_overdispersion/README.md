@@ -36,8 +36,8 @@ docker run --env-file .env quote-overdispersion
 | `CLICKHOUSE_PORT` | `8123` | ClickHouse HTTP port |
 | `CLICKHOUSE_DATABASE` | `default` | Database name |
 | `POLL_INTERVAL_SECONDS` | `300` | Seconds between analysis cycles |
-| `QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD` | `0.01` | FDR target for volume anomalies (q-value threshold) |
-| `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD` | `0.01` | FDR target for density anomalies (q-value threshold) |
+| `QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD` | `0.05` | FDR target for volume anomalies (q-value threshold) |
+| `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD` | `0.05` | FDR target for density anomalies (q-value threshold) |
 | `QUOTE_OVERDISPERSION_BASELINE_DAYS` | `7` | Rolling baseline window in days |
 | `QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS` | `1` | Minimum baseline days to use entity baseline |
 | `QUOTE_OVERDISPERSION_MIN_SHARERS` | `3` | Minimum unique sharers required to score a quoted post on a given day |
