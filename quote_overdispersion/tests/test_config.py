@@ -8,8 +8,8 @@ from quote_overdispersion.config import AnalysisConfig, AppConfig, ClickHouseCon
 def base_analysis_config() -> AnalysisConfig:
     return AnalysisConfig(
         interval_seconds=900,
-        volume_p_threshold=0.01,
-        density_p_threshold=0.01,
+        volume_p_threshold=0.05,
+        density_p_threshold=0.05,
         baseline_days=7,
         cold_start_min_days=1,
         min_sharers=3,
@@ -75,8 +75,8 @@ class TestAnalysisConfig:
         config = AnalysisConfig.from_env()
 
         assert config.interval_seconds == 900
-        assert config.volume_p_threshold == 0.01
-        assert config.density_p_threshold == 0.01
+        assert config.volume_p_threshold == 0.05
+        assert config.density_p_threshold == 0.05
         assert config.baseline_days == 7
         assert config.cold_start_min_days == 1
         assert config.min_sharers == 3
@@ -123,8 +123,8 @@ class TestAnalysisConfig:
     def test_construct_directly(self) -> None:
         config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
             baseline_days=7,
             cold_start_min_days=1,
             min_sharers=3,
@@ -163,8 +163,8 @@ class TestAppConfig:
         )
         analysis_config = AnalysisConfig(
             interval_seconds=900,
-            volume_p_threshold=0.01,
-            density_p_threshold=0.01,
+            volume_p_threshold=0.05,
+            density_p_threshold=0.05,
             baseline_days=7,
             cold_start_min_days=1,
             min_sharers=3,

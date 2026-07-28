@@ -325,6 +325,7 @@ ORDER BY run_date DESC, granularity, pct_of_batch DESC;
 **Healthy ranges:**
 - Population baseline may be 50–70%+ even after multiple days (expected for short-lived entities). This is normal.
 - Quote overdispersion uses shorter baseline windows than URL overdispersion (7-day lookback, 1-day cold start) because quoted posts are short-lived. Entity baseline rates should be higher than with the previous 14-day/3-day defaults, but population baseline dominance remains expected.
+- Population baseline should be **stable** across days (not volatile). The population baseline is computed cross-sectionally from all scored quoted posts today (median observed volume, cross-sectional dispersion clamped at 20.0), so day-to-day swings should be modest. If population baseline percentage swings ±20%+ day-to-day, investigate sample size.
 - If entity baseline approaches 70%+ after 3 days, quoted posts are being tracked longer than design expectation; verify that the age-out logic in the query is working.
 
 #### Query 4: Dispersion factor distribution
@@ -348,16 +349,18 @@ ORDER BY run_date DESC, granularity;
 
 ### Tuning Levers
 
-- **FDR targets (`QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD`, `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.01.
+- **FDR targets (`QUOTE_OVERDISPERSION_VOLUME_P_THRESHOLD`, `QUOTE_OVERDISPERSION_DENSITY_P_THRESHOLD`):** Defaults 0.05. Matches URL overdispersion. The previous 0.01 default caused flag rate volatility (0–15%) because the hypersensitive threshold amplified day-to-day shifts in the population baseline median.
 - **Baseline days (`QUOTE_OVERDISPERSION_BASELINE_DAYS`):** Default 7. Shorter than URL overdispersion (14) because quoted posts are short-lived — most don't survive 3 days. A 7-day lookback allows entity baselines for any URI quoted on consecutive days.
 - **Min sharers (`QUOTE_OVERDISPERSION_MIN_SHARERS`):** Default 3 (same rationale as URL).
-- **Cold-start threshold (`QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 1. Lower than URL overdispersion (3) because a 1-day baseline is weak but better than population fallback for volatility reduction. A quoted URI quoted on two consecutive days qualifies for an entity baseline.
+- **Cold-start threshold (`QUOTE_OVERDISPERSION_COLD_START_MIN_DAYS`):** Default 1. Lower than URL overdispersion (3) because a 1-day baseline is weak but better than population fallback for volatility reduction. A quoted URI quoted on two consecutive days qualifies for an entity baseline. Note: this threshold is used by `analyzer.py`'s `determine_baseline()` in Python; it is no longer interpolated into the SQL population_stats query.
+- **Population baseline computation:** Cross-sectional — computed from `median(total_shares)` and `varPop(sharer_density)` over all entities with `total_shares > 0` today. Dispersion factor φ = `least(varPop(total_shares) / avg(total_shares), 20.0)` — clamped at 20.0 to prevent extreme long-tail inflation. This replaced the previous approach of computing population stats from rolling-baseline history of the few entities with multi-day history, which was structurally broken for ephemeral content.
 
 ### Escalation
 
 Same as URL overdispersion. Additionally, if population fallback dominates:
 1. Verify that quoted posts are being tracked correctly (check `PostEmbedRecordUri` / `PostEmbedRecordWithMediaUri` coalescing in queries).
 2. Quoted posts typically have short observation windows; high population baseline is expected and not a failure mode.
+3. Population baseline dominance is expected for quote posts (50–70%+) but should be **stable** across days. The population baseline is now computed cross-sectionally from all active entities today (median observed volume, clamped dispersion), providing a large and representative sample. If the population baseline percentage or flag rate swings ±20%+ day-to-day, check that batch sizes are ≥ 50 entities (small batches cause unstable medians).
 
 ---
 

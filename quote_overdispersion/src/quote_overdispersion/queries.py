@@ -65,13 +65,13 @@ def daily_aggregation_query(config: AnalysisConfig) -> str:
         ),
         population_stats AS (
             SELECT
-                median(rolling_volume_median) AS population_volume_median,
-                median(if(rolling_volume_mean > 0, rolling_volume_variance / rolling_volume_mean, NULL)) AS population_volume_dispersion,
-                median(rolling_density_mean) AS population_density_median,
-                median(rolling_density_variance) AS population_density_variance
+                median(total_shares) AS population_volume_median,
+                if(avg(total_shares) > 0, least(varPop(total_shares) / avg(total_shares), 20.0), 1.0) AS population_volume_dispersion,
+                median(sharer_density) AS population_density_median,
+                varPop(sharer_density) AS population_density_variance
             FROM baseline
             WHERE bucket = toDate(now())
-                AND baseline_buckets_available >= {config.cold_start_min_days}
+                AND total_shares > 0
         )
         SELECT
             b.quoted_uri,
@@ -157,13 +157,13 @@ def hourly_aggregation_query(config: AnalysisConfig) -> str:
         ),
         population_stats AS (
             SELECT
-                median(rolling_volume_median) AS population_volume_median,
-                median(if(rolling_volume_mean > 0, rolling_volume_variance / rolling_volume_mean, NULL)) AS population_volume_dispersion,
-                median(rolling_density_mean) AS population_density_median,
-                median(rolling_density_variance) AS population_density_variance
+                median(total_shares) AS population_volume_median,
+                if(avg(total_shares) > 0, least(varPop(total_shares) / avg(total_shares), 20.0), 1.0) AS population_volume_dispersion,
+                median(sharer_density) AS population_density_median,
+                varPop(sharer_density) AS population_density_variance
             FROM baseline
             WHERE bucket = toStartOfHour(now())
-                AND baseline_buckets_available >= {config.cold_start_min_days}
+                AND total_shares > 0
         )
         SELECT
             b.quoted_uri,
