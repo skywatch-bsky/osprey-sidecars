@@ -48,7 +48,7 @@ class TestRunBackfill:
         calls: list[date] = []
         monkeypatch.setattr(
             'url_cosharing.backfill.run_cycle',
-            lambda db, config, run_date, telemetry=None: calls.append(run_date),
+            lambda db, config, run_date, telemetry=None, exclusions=None: calls.append(run_date),
         )
 
         run_backfill(db=object(), config=object(), start=date(2026, 6, 25), end=date(2026, 6, 28))
@@ -59,3 +59,39 @@ class TestRunBackfill:
             date(2026, 6, 27),
             date(2026, 6, 28),
         ]
+
+    def test_run_backfill_passes_exclusions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every recomputed day runs under the SAME exclusions revision, so
+        evolution tracking compares like-for-like history."""
+        from url_cosharing.config import Exclusions
+
+        seen: list[Exclusions] = []
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['static.klipy.com'], 'excluded_dids': []})
+        monkeypatch.setattr(
+            'url_cosharing.backfill.run_cycle',
+            lambda db, config, run_date, telemetry=None, exclusions=None: seen.append(exclusions),
+        )
+
+        run_backfill(
+            db=object(),
+            config=object(),
+            start=date(2026, 6, 25),
+            end=date(2026, 6, 26),
+            exclusions=exclusions,
+        )
+
+        assert seen == [exclusions, exclusions]
+        assert all(item is exclusions for item in seen)
+
+    def test_run_backfill_defaults_to_empty_exclusions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from url_cosharing.config import Exclusions
+
+        seen: list[Exclusions] = []
+        monkeypatch.setattr(
+            'url_cosharing.backfill.run_cycle',
+            lambda db, config, run_date, telemetry=None, exclusions=None: seen.append(exclusions),
+        )
+
+        run_backfill(db=object(), config=object(), start=date(2026, 6, 25), end=date(2026, 6, 25))
+
+        assert seen == [Exclusions.empty()]

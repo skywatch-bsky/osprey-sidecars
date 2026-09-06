@@ -23,7 +23,7 @@ import logging
 import sys
 from datetime import date, timedelta
 
-from url_cosharing.config import AppConfig
+from url_cosharing.config import AppConfig, Exclusions, load_exclusions
 from url_cosharing.db import CosharingDb
 from url_cosharing.main import run_cycle
 from url_cosharing.telemetry import TelemetryHandles, setup_telemetry
@@ -53,12 +53,15 @@ def run_backfill(
     start: date,
     end: date,
     telemetry: TelemetryHandles | None = None,
+    exclusions: Exclusions = Exclusions.empty(),
 ) -> None:
+    """Recompute the range under ONE exclusions revision, passed through to
+    every run_cycle so evolution tracking compares like-for-like history."""
     total = (end - start).days + 1
     for offset in range(total):
         run_date = start + timedelta(days=offset)
         logger.info(f'backfilling {run_date} ({offset + 1}/{total})')
-        run_cycle(db, config, run_date=run_date, telemetry=telemetry)
+        run_cycle(db, config, run_date=run_date, telemetry=telemetry, exclusions=exclusions)
 
 
 def main() -> None:
@@ -69,10 +72,19 @@ def main() -> None:
         sys.exit(2)
 
     config = AppConfig.from_env()
+    # Fail fast on a missing/invalid exclusions file before touching history.
+    try:
+        exclusions = load_exclusions(config.analysis.exclusions_file) if config.analysis.exclusions_file else (
+            Exclusions.empty()
+        )
+    except (OSError, ValueError) as exc:
+        logger.error(f'failed to load exclusions: {exc}')
+        sys.exit(2)
+
     telemetry = setup_telemetry(config.telemetry)
     db = CosharingDb(config.clickhouse)
     try:
-        run_backfill(db, config, start, end, telemetry=telemetry)
+        run_backfill(db, config, start, end, telemetry=telemetry, exclusions=exclusions)
     finally:
         db.close()
         telemetry.shutdown()

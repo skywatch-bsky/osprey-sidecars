@@ -56,6 +56,7 @@ docker run --env-file .env url-cosharing
 | `URL_COSHARING_CLUSTERS_TABLE` | `url_cosharing_clusters` | ClickHouse table for cluster results |
 | `URL_COSHARING_MEMBERSHIP_TABLE` | `url_cosharing_membership` | ClickHouse table for membership snapshots |
 | `URL_COSHARING_SOURCE_TABLE` | `osprey_execution_results` | Source table for URL shares |
+| `URL_COSHARING_EXCLUSIONS_FILE` | unset | Path to an `exclusions.yaml` file declaring benign accounts/URLs to exclude (see [Exclusions](#exclusions); unset = no exclusions) |
 | `URL_COSHARING_OTEL_ENABLED` | `false` | Enable OpenTelemetry traces/metrics |
 | `URL_COSHARING_OTEL_SERVICE_NAME` | `url-cosharing` | OTel service name |
 | `URL_COSHARING_OTEL_SERVICE_VERSION` | `0.1.0` | OTel service version |
@@ -70,8 +71,32 @@ OpenTelemetry is disabled by default. Set `URL_COSHARING_OTEL_ENABLED=true` and 
 
 Telemetry is intentionally low-cardinality and privacy-preserving. DIDs, URLs, domains, cluster IDs, sample URLs, and sample DIDs must not be emitted as span attributes or metric labels. Those high-cardinality domain details belong in ClickHouse result tables. `url_cosharing_runs` remains the durable audit table for detector methodology and stage counts; OpenTelemetry is operational observability for timings, failures, and coarse health signals.
 
+## Exclusions
+
+Some share patterns are benign by construction — weather bots reposting identical links, accounts embedding the same GIF CDN URL. Set `URL_COSHARING_EXCLUSIONS_FILE` to point at a YAML file declaring them:
+
+```yaml
+excluded_domains:
+  # Exact host OR any subdomain of it. static.klipy.com also covers
+  # a.static.klipy.com; it never matches evil-klipy.com (the suffix
+  # match is dot-anchored).
+  - static.klipy.com
+excluded_dids:
+  # Exact DIDs; the account and all its shares are removed.
+  - did:plc:example1234567890abcdef
+```
+
+Semantics:
+
+- **Layer**: exclusions apply at the SQL eligibility layer, inside the share query and **before** document-frequency, eligibility, and mono-URL computation. An excluded URL stops counting toward `min_unique_urls` and the ≥2-URL floor; a fleet whose entire link set is excluded simply drops out via the existing rules.
+- **Matching**: domain entries match the exact host or a subdomain of it (`lower(domain(url)) = entry` OR `endsWith(lower(domain(url)), '.entry')`). The leading dot prevents `klipy.com` from matching lookalike hosts like `evil-klipy.com`.
+- **Hot reload**: the daemon reloads the file every cycle — edits take effect next cycle, no restart. `backfill` and `calibrate` load once at startup instead.
+- **Failure handling**: unset env var → no exclusions (the file is not required). Env var set but the file missing/invalid at startup → the process exits non-zero. A file that breaks **mid-flight** → last-known-good exclusions stay in effect for that cycle and an ERROR is logged.
+- **Auditability**: every run writes the applied revision to `url_cosharing_runs` (`excluded_domains_count`, `excluded_dids_count`, `exclusions_hash`, `excluded_shares_suppressed`), so results remain attributable to a specific exclusions revision.
+- **Validation**: domains must be lowercase hostnames (`label.second-label` shape); DIDs must match `did:plc:[a-z0-9]+`. Unknown top-level keys are rejected (typo protection). These restrictions also make direct interpolation into the generated SQL safe.
+
 ## Output schema
 
 - `url_cosharing_clusters` — cluster results with member count, metrics (`mean_edge_similarity`, `subgraph_density`), and evolution tracking
 - `url_cosharing_membership` — daily membership snapshots per cluster (no TTL; retained for post-hoc analysis)
-- `url_cosharing_runs` — run metadata including stage counts, quantile choices, knee-finding result, flagged account count, and cluster count
+- `url_cosharing_runs` — run metadata including stage counts, quantile choices, knee-finding result, flagged account count, cluster count, and the exclusion audit fields (`excluded_domains_count`, `excluded_dids_count`, `exclusions_hash`, `excluded_shares_suppressed`). `accounts_raw` is the pre-exclusion window population, so exclusion suppression appears as extra `accounts_raw → accounts_eligible` attrition quantified by `excluded_shares_suppressed`

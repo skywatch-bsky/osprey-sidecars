@@ -9,7 +9,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from url_cosharing.analyzer import EvolutionEvent, TimestampedCluster
-from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig
+from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig, Exclusions
 from url_cosharing.db import MembershipRow, MemberTimestamp, RunMetadata
 from url_cosharing.main import run_cycle
 from url_cosharing.similarity import UrlShareRow
@@ -22,16 +22,25 @@ class FakeDb:
     def __init__(self) -> None:
         self.url_shares: list[UrlShareRow] = []
         self.raw_account_count: int = 0
+        self.excluded_shares_count: int = 0
         self.membership_rows: list[MembershipRow] = []
         self.timestamp_rows: list[MemberTimestamp] = []
         self.captured_clusters: list[tuple[date, TimestampedCluster, EvolutionEvent]] = []
         self.captured_membership: list[tuple[date, str, str]] = []
         self.captured_runs: list[tuple[str, RunMetadata]] = []
         self.deleted_run_dates: list[tuple[str, date]] = []
+        self.captured_share_queries: list[str] = []
+        self.captured_audit_queries: list[str] = []
 
     def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
         """Returns pre-configured URL shares."""
+        self.captured_share_queries.append(query)
         return self.url_shares
+
+    def fetch_excluded_shares_count(self, query: str) -> int:
+        """Returns the pre-configured suppressed-share count."""
+        self.captured_audit_queries.append(query)
+        return self.excluded_shares_count
 
     def fetch_raw_account_count(self, query: str) -> int:
         """Returns the pre-configured raw window account count."""
@@ -586,3 +595,89 @@ class TestRunCycleExplicitRunDate:
         assert len(fake_db.captured_runs) == 1
         _, run = fake_db.captured_runs[0]
         assert run.run_date == target
+
+
+class TestRunCycleExclusions:
+    def _minimal_shares(self, fake_db: FakeDb) -> None:
+        fake_db.url_shares = [
+            UrlShareRow(did='did:plc:a1', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a1', url='https://example.com/u2', share_count=1),
+            UrlShareRow(did='did:plc:a2', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a2', url='https://example.com/u2', share_count=1),
+            UrlShareRow(did='did:plc:a3', url='https://example.com/u1', share_count=1),
+            UrlShareRow(did='did:plc:a3', url='https://example.com/u3', share_count=1),
+        ]
+
+    def test_run_cycle_uses_exclusions(
+        self,
+        app_config: AppConfig,
+        telemetry_handles: tuple[TelemetryHandles, InMemorySpanExporter],
+    ) -> None:
+        """Exclusions are applied in the share query and the audit count query
+        runs (AC.1)."""
+        fake_db = FakeDb()
+        fake_db.raw_account_count = 3
+        fake_db.excluded_shares_count = 77
+        self._minimal_shares(fake_db)
+
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['static.klipy.com'], 'excluded_dids': []})
+        handles, exporter = telemetry_handles
+        run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), telemetry=handles, exclusions=exclusions)
+
+        assert len(fake_db.captured_share_queries) == 1
+        assert "NOT (lower(domain(url)) = 'static.klipy.com'" in fake_db.captured_share_queries[0]
+        assert len(fake_db.captured_audit_queries) == 1
+        assert 'static.klipy.com' in fake_db.captured_audit_queries[0]
+
+        span_names = {span.name for span in exporter.get_finished_spans()}
+        assert 'url_cosharing.fetch_excluded_shares_count' in span_names
+
+    def test_run_cycle_excludes_dids(self, app_config: AppConfig) -> None:
+        """DID exclusions are applied in the same query layer (AC.2)."""
+        fake_db = FakeDb()
+        self._minimal_shares(fake_db)
+
+        exclusions = Exclusions.from_mapping(
+            {'excluded_domains': [], 'excluded_dids': ['did:plc:weatherbot01']}
+        )
+        run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), exclusions=exclusions)
+
+        assert "did NOT IN ('did:plc:weatherbot01')" in fake_db.captured_share_queries[0]
+
+    def test_audit_metadata_recorded(
+        self,
+        app_config: AppConfig,
+    ) -> None:
+        """AC.5: applied revision (counts + hash) and suppressed rows land in
+        the run metadata audit fields."""
+        fake_db = FakeDb()
+        fake_db.raw_account_count = 3
+        fake_db.excluded_shares_count = 4321
+        self._minimal_shares(fake_db)
+
+        exclusions = Exclusions.from_mapping(
+            {'excluded_domains': ['static.klipy.com', 'klipy.com'], 'excluded_dids': ['did:plc:weatherbot01']}
+        )
+        run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), exclusions=exclusions)
+
+        assert len(fake_db.captured_runs) == 1
+        _, run = fake_db.captured_runs[0]
+        assert run.excluded_domains_count == 2
+        assert run.excluded_dids_count == 1
+        assert run.exclusions_hash == exclusions.content_hash
+        assert run.excluded_shares_suppressed == 4321
+
+    def test_empty_exclusions_skip_audit_query(self, app_config: AppConfig) -> None:
+        """Default path unchanged: no audit query, zero/empty audit fields."""
+        fake_db = FakeDb()
+        fake_db.raw_account_count = 3
+        self._minimal_shares(fake_db)
+
+        run_cycle(fake_db, app_config, run_date=date(2026, 7, 7))
+
+        assert fake_db.captured_audit_queries == []
+        _, run = fake_db.captured_runs[0]
+        assert run.excluded_domains_count == 0
+        assert run.excluded_dids_count == 0
+        assert run.excluded_shares_suppressed == 0
+        assert run.exclusions_hash == Exclusions.empty().content_hash

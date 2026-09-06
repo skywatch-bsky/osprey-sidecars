@@ -275,6 +275,118 @@ class TestFormatSurface:
         assert '\n' in output
 
 
+class TestCalibrateExclusions:
+    def test_main_loads_exclusions_and_passes_to_share_query(self, monkeypatch, tmp_path) -> None:
+        """Calibrate must dump the surface the sidecar would actually compute:
+        exclusions loaded once at startup and passed into the share query."""
+        captured_queries: list[str] = []
+
+        class FakeDb:
+            def __init__(self, config) -> None:
+                self.config = config
+
+            def fetch_url_shares(self, query: str) -> list[UrlShareRow]:
+                captured_queries.append(query)
+                return [
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a1', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a2', url='https://example.com/u2', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u1', share_count=1),
+                    UrlShareRow(did='did:plc:a3', url='https://example.com/u3', share_count=1),
+                ]
+
+            def fetch_raw_account_count(self, query: str) -> int:
+                return 3
+
+            def close(self) -> None:
+                pass
+
+        exclusions_path = tmp_path / 'exclusions.yaml'
+        exclusions_path.write_text('excluded_domains:\n  - static.klipy.com\n', encoding='utf-8')
+
+        analysis = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_cluster_size=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=2,
+            min_url_sharers=2,
+            max_url_df_fraction=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.5, 0.9),
+            centrality_quantile_grid=(0.5, 0.9),
+            density_floor=0.5,
+            max_flagged_fraction=0.05,
+            runs_table='url_cosharing_runs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+            exclusions_file=str(exclusions_path),
+        )
+        app_config = AppConfig(
+            clickhouse=ClickHouseConfig(
+                host='localhost',
+                port=8123,
+                user='default',
+                password='clickhouse',
+                database='default',
+            ),
+            analysis=analysis,
+        )
+        monkeypatch.setattr(calibrate.AppConfig, 'from_env', classmethod(lambda cls: app_config))
+        monkeypatch.setattr(calibrate, 'CosharingDb', FakeDb)
+
+        calibrate.main()
+
+        assert len(captured_queries) == 1
+        assert "NOT (lower(domain(url)) = 'static.klipy.com'" in captured_queries[0]
+
+    def test_main_fails_fast_on_invalid_exclusions_file(self, monkeypatch, tmp_path, capsys) -> None:
+        """Invalid exclusions abort before any run (AC.6)."""
+        exclusions_path = tmp_path / 'exclusions.yaml'
+        exclusions_path.write_text('excluded_domain:\n  - static.klipy.com\n', encoding='utf-8')
+
+        analysis = AnalysisConfig(
+            interval_seconds=3600,
+            resolution=0.05,
+            min_cluster_size=3,
+            jaccard_threshold=0.5,
+            evolution_window_days=7,
+            window_days=7,
+            min_unique_urls=2,
+            min_url_sharers=2,
+            max_url_df_fraction=0.90,
+            edge_epsilon=0.05,
+            edge_quantile_grid=(0.5, 0.9),
+            centrality_quantile_grid=(0.5, 0.9),
+            density_floor=0.5,
+            max_flagged_fraction=0.05,
+            runs_table='url_cosharing_runs',
+            clusters_table='url_cosharing_clusters',
+            membership_table='url_cosharing_membership',
+            source_table='osprey_execution_results',
+            exclusions_file=str(exclusions_path),
+        )
+        app_config = AppConfig(
+            clickhouse=ClickHouseConfig(
+                host='localhost',
+                port=8123,
+                user='default',
+                password='clickhouse',
+                database='default',
+            ),
+            analysis=analysis,
+        )
+        monkeypatch.setattr(calibrate.AppConfig, 'from_env', classmethod(lambda cls: app_config))
+
+        with pytest.raises(SystemExit) as excinfo:
+            calibrate.main()
+        assert excinfo.value.code == 2
+
+
 class RecordingCounter:
     def __init__(self) -> None:
         self.calls = []

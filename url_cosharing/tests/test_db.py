@@ -483,8 +483,102 @@ class TestInsertRun:
             'guardrail_triggered',
             'flagged_accounts',
             'cluster_count',
+            'excluded_domains_count',
+            'excluded_dids_count',
+            'exclusions_hash',
+            'excluded_shares_suppressed',
         ]
         assert call_args[1]['column_names'] == expected_columns
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_insert_run_columns_include_audit_fields(self, mock_get_client) -> None:
+        """The four exclusion audit columns are always written."""
+        from url_cosharing.db import RunMetadata
+
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+            excluded_domains_count=1,
+            excluded_dids_count=2,
+            exclusions_hash='abc123',
+            excluded_shares_suppressed=42,
+        )
+
+        db.insert_run('url_cosharing_runs', run)
+
+        call_args = mock_client.insert.call_args
+        data = call_args[1]['data']
+        row_data = data[0]
+        assert row_data[13] == 1  # excluded_domains_count
+        assert row_data[14] == 2  # excluded_dids_count
+        assert row_data[15] == 'abc123'  # exclusions_hash
+        assert row_data[16] == 42  # excluded_shares_suppressed
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_insert_run_defaults_record_empty_exclusions(self, mock_get_client) -> None:
+        """Runs constructed without exclusions still write the audit columns
+        with the empty-exclusion semantics (0/0/''/0)."""
+        from url_cosharing.db import RunMetadata
+
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        db = CosharingDb(config)
+
+        run = RunMetadata(
+            run_date=date(2026, 3, 22),
+            window_days=7,
+            accounts_raw=100,
+            accounts_eligible=50,
+            urls_eligible=200,
+            graph_edges=150,
+            edge_quantile=0.75,
+            centrality_quantile=0.80,
+            min_component_density=0.5,
+            knee_found=True,
+            guardrail_triggered=False,
+            flagged_accounts=10,
+            cluster_count=3,
+        )
+
+        db.insert_run('url_cosharing_runs', run)
+
+        call_args = mock_client.insert.call_args
+        row_data = call_args[1]['data'][0]
+        assert row_data[13] == 0
+        assert row_data[14] == 0
+        assert row_data[15] == ''
+        assert row_data[16] == 0
 
     @patch('url_cosharing.db.clickhouse_connect.get_client')
     def test_insert_run_includes_data_row(self, mock_get_client) -> None:
@@ -583,3 +677,49 @@ class TestFetchRawAccountCount:
         db = CosharingDb(config)
 
         assert db.fetch_raw_account_count('SELECT uniqExact(UserId) FROM t') == 0
+
+
+class TestFetchExcludedSharesCount:
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_returns_scalar_count_as_int(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        mock_result = Mock()
+        mock_result.result_rows = [(1234,)]
+        mock_client.query.return_value = mock_result
+
+        db = CosharingDb(config)
+        count = db.fetch_excluded_shares_count("SELECT count() FROM t WHERE did IN ('did:plc:x')")
+
+        assert count == 1234
+        assert isinstance(count, int)
+        call_kwargs = mock_client.query.call_args.kwargs
+        assert call_kwargs.get('settings') == {'max_execution_time': 300}
+
+    @patch('url_cosharing.db.clickhouse_connect.get_client')
+    def test_empty_result_returns_zero(self, mock_get_client) -> None:
+        config = ClickHouseConfig(
+            host='localhost',
+            port=8123,
+            user='default',
+            password='clickhouse',
+            database='default',
+        )
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+
+        mock_result = Mock()
+        mock_result.result_rows = []
+        mock_client.query.return_value = mock_result
+
+        db = CosharingDb(config)
+
+        assert db.fetch_excluded_shares_count('SELECT count() FROM t') == 0

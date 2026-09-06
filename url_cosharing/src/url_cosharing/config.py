@@ -1,11 +1,25 @@
 # pattern: Functional Core
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
 
+import yaml
+
 _TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_.]+$')
+
+# Hostname shape: labels start/end alphanumeric, at least one dot. Applied
+# after strip().lower(); rejects junk ('..', '-', '.klipy.com') that would
+# produce silently-never-matching SQL predicates. The character classes
+# exclude quote/backslash metacharacters, which is what makes direct
+# f-string interpolation into SQL safe (defence-in-depth, same rationale
+# as _sanitize_did in main.py).
+_DOMAIN_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
+_DID_PATTERN = re.compile(r'^did:plc:[a-z0-9]+$')
+
+_EXCLUSIONS_KEYS = frozenset({'excluded_domains', 'excluded_dids'})
 
 
 def _validate_table_name(table: str) -> str:
@@ -46,6 +60,121 @@ def _parse_bool(env_var: str, value: str) -> bool:
     if normalized in {'0', 'false', 'no', 'off'}:
         return False
     raise ValueError(f'{env_var} must be a boolean (1/0, true/false, yes/no, on/off): {value!r}')
+
+
+@dataclass(frozen=True)
+class Exclusions:
+    """Declared-benign accounts and URLs excluded at the SQL eligibility layer.
+
+    content_hash identifies the applied revision: sha256 over the sorted,
+    normalized entries (labeled lines, domains then dids). It is written to
+    url_cosharing_runs.exclusions_hash on every run so results stay auditable
+    across hot reloads of the exclusions file.
+    """
+
+    excluded_domains: tuple[str, ...]
+    excluded_dids: tuple[str, ...]
+    content_hash: str
+
+    @classmethod
+    def empty(cls) -> Exclusions:
+        """All-empty revision; hash of zero entries."""
+        return cls(excluded_domains=(), excluded_dids=(), content_hash=hashlib.sha256(b'').hexdigest())
+
+    def is_empty(self) -> bool:
+        return not self.excluded_domains and not self.excluded_dids
+
+    @classmethod
+    def from_mapping(cls, data: object) -> Exclusions:
+        """Validate a parsed YAML mapping and normalize it into a revision.
+
+        Rejects non-mapping top level and unknown keys (typo protection: an
+        `excluded_domain:` key would otherwise silently exclude nothing).
+        Domains are stripped/lowercased/deduped; DIDs are validated exactly.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(
+                f'exclusions must be a YAML mapping with keys {_EXCLUSIONS_KEYS}, got {type(data).__name__}'
+            )
+        unknown = set(data.keys()) - _EXCLUSIONS_KEYS
+        if unknown:
+            raise ValueError(f'unknown exclusions keys: {sorted(str(key) for key in unknown)}')
+
+        raw_domains = data.get('excluded_domains', [])
+        raw_dids = data.get('excluded_dids', [])
+        if not isinstance(raw_domains, list) or not isinstance(raw_dids, list):
+            raise ValueError('excluded_domains and excluded_dids must be YAML lists')
+
+        domains: list[str] = []
+        for entry in raw_domains:
+            if not isinstance(entry, str):
+                raise ValueError(f'excluded_domains entries must be strings: {entry!r}')
+            normalized = entry.strip().lower()
+            if not _DOMAIN_PATTERN.match(normalized):
+                raise ValueError(
+                    f'invalid hostname in excluded_domains: {entry!r} '
+                    '(expected lowercase hostname labels like static.klipy.com)'
+                )
+            domains.append(normalized)
+
+        dids: list[str] = []
+        for entry in raw_dids:
+            if not isinstance(entry, str):
+                raise ValueError(f'excluded_dids entries must be strings: {entry!r}')
+            if not _DID_PATTERN.match(entry.strip()):
+                raise ValueError(f'invalid DID in excluded_dids (expected did:plc:[a-z0-9]+): {entry!r}')
+            dids.append(entry.strip())
+
+        domains = sorted(set(domains))
+        dids = sorted(set(dids))
+        hasher = hashlib.sha256()
+        for domain in domains:
+            hasher.update(f'domain:{domain}\n'.encode('utf-8'))
+        for did in dids:
+            hasher.update(f'did:{did}\n'.encode('utf-8'))
+        return cls(excluded_domains=tuple(domains), excluded_dids=tuple(dids), content_hash=hasher.hexdigest())
+
+
+def parse_exclusions(raw_text: str | None) -> Exclusions:
+    """Parse exclusions YAML text into an Exclusions revision (Functional Core).
+
+    Empty or whitespace-only text yields the empty revision.
+    """
+    if raw_text is None or not raw_text.strip():
+        return Exclusions.empty()
+    try:
+        data = yaml.safe_load(raw_text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f'invalid exclusions YAML: {exc}') from exc
+    return Exclusions.from_mapping(data)
+
+
+def load_exclusions(path: str) -> Exclusions:
+    """Read and parse an exclusions file (Shell: file I/O).
+
+    Raises OSError on unreadable/missing files and ValueError on invalid
+    content — callers that must not start with bad exclusions fail fast on
+    these; the daemon's hot-reload path wraps this in load_exclusions_with_fallback.
+    """
+    with open(path, 'r', encoding='utf-8') as handle:
+        return parse_exclusions(handle.read())
+
+
+def load_exclusions_with_fallback(path: str | None, previous: Exclusions) -> tuple[Exclusions, str | None]:
+    """Load exclusions for one daemon cycle, retaining last-known-good on error.
+
+    Returns (exclusions, error_message). path None -> (empty, None): the file
+    is not required when the env var is unset. A missing/unreadable/malformed
+    file mid-flight returns the previous revision plus an error message so the
+    daemon keeps running on last-known-good while the breakage is logged and
+    remains auditable via the recorded hash.
+    """
+    if path is None:
+        return Exclusions.empty(), None
+    try:
+        return load_exclusions(path), None
+    except (OSError, ValueError) as exc:
+        return previous, f'exclusions reload failed, retaining last-known-good ({previous.content_hash[:12]}): {exc}'
 
 
 @dataclass(frozen=True)
@@ -92,6 +221,10 @@ class AnalysisConfig:
     # cores are roughly constant in absolute size (Cinus et al.: 25-764),
     # so the fraction alone would make sensitivity track daily eligibility.
     max_flagged_accounts: int = 750
+    # Path to the exclusions YAML file (declared-benign accounts/URLs).
+    # Unset or empty -> None -> empty exclusions; the file is not required
+    # when the feature is unused.
+    exclusions_file: str | None = None
 
     @classmethod
     def from_env(cls) -> AnalysisConfig:
@@ -145,6 +278,7 @@ class AnalysisConfig:
                 os.environ.get('URL_COSHARING_MEMBERSHIP_TABLE', 'url_cosharing_membership')
             ),
             source_table=_validate_table_name(os.environ.get('URL_COSHARING_SOURCE_TABLE', 'osprey_execution_results')),
+            exclusions_file=os.environ.get('URL_COSHARING_EXCLUSIONS_FILE') or None,
         )
 
 
