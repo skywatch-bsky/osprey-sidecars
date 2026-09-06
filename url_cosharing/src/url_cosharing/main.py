@@ -12,10 +12,11 @@ from url_cosharing.analyzer import (
     compute_evolution,
     compute_temporal_metrics,
 )
-from url_cosharing.config import AppConfig
+from url_cosharing.config import AppConfig, Exclusions, load_exclusions, load_exclusions_with_fallback
 from url_cosharing.db import CosharingDb, MembershipRow, RunMetadata
 from url_cosharing.dismantling import dismantle
 from url_cosharing.queries import (
+    fetch_excluded_shares_count_query,
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
     fetch_raw_account_count_query,
@@ -81,6 +82,7 @@ def run_cycle(
     config: AppConfig,
     run_date: date | None = None,
     telemetry: TelemetryHandles | None = None,
+    exclusions: Exclusions = Exclusions.empty(),
 ) -> None:
     """Compute and persist one day's detection results.
 
@@ -88,6 +90,11 @@ def run_cycle(
     recomputes that day: the detection window is the window_days days ending
     the day before run_date, and existing rows for run_date are overwritten
     via the idempotent delete-then-insert below.
+
+    exclusions are applied at the SQL eligibility layer (inside the share
+    query, before df/eligibility/mono-URL computation). When non-empty, the
+    suppressed share-row count is fetched and recorded alongside the applied
+    revision in the run metadata audit columns.
     """
     if run_date is None:
         run_date = date.today()
@@ -104,7 +111,7 @@ def run_cycle(
         try:
             logger.info('fetching url shares')
             with stage_span(telemetry, 'url_cosharing.fetch_url_shares'):
-                rows = db.fetch_url_shares(fetch_url_shares_query(analysis, run_date))
+                rows = db.fetch_url_shares(fetch_url_shares_query(analysis, run_date, exclusions))
             logger.info(f'fetched {len(rows)} share rows')
             if not rows:
                 logger.warning(
@@ -114,6 +121,14 @@ def run_cycle(
 
             with stage_span(telemetry, 'url_cosharing.fetch_raw_account_count'):
                 accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, run_date))
+
+            excluded_shares_suppressed = 0
+            if not exclusions.is_empty():
+                with stage_span(telemetry, 'url_cosharing.fetch_excluded_shares_count'):
+                    excluded_shares_suppressed = db.fetch_excluded_shares_count(
+                        fetch_excluded_shares_count_query(analysis, run_date, exclusions)
+                    )
+                logger.info(f'exclusions suppressed {excluded_shares_suppressed} share rows')
 
             with stage_span(telemetry, 'url_cosharing.build_similarity_network'):
                 network = similarity_network(rows, analysis.edge_epsilon)
@@ -229,6 +244,10 @@ def run_cycle(
                 guardrail_triggered=result.guardrail_triggered,
                 flagged_accounts=result.core.vcount(),
                 cluster_count=len(cluster_rows),
+                excluded_domains_count=len(exclusions.excluded_domains),
+                excluded_dids_count=len(exclusions.excluded_dids),
+                exclusions_hash=exclusions.content_hash,
+                excluded_shares_suppressed=excluded_shares_suppressed,
             )
             with stage_span(telemetry, 'url_cosharing.persist_run_metadata'):
                 db.insert_run(analysis.runs_table, run_metadata)
@@ -249,6 +268,38 @@ def run_cycle(
             raise
 
 
+def _load_startup_exclusions(exclusions_file: str | None) -> Exclusions:
+    """Load exclusions once at startup, failing fast on a bad file.
+
+    The env var being set but the file missing/invalid is a deployment error:
+    exit non-zero rather than silently running with (or without) exclusions
+    the operator believes are applied.
+    """
+    if exclusions_file is None:
+        return Exclusions.empty()
+    try:
+        return load_exclusions(exclusions_file)
+    except (OSError, ValueError) as exc:
+        logger.error(f'failed to load exclusions from {exclusions_file}: {exc}')
+        raise SystemExit(1) from exc
+
+
+def reload_exclusions(exclusions_file: str | None, previous: Exclusions) -> Exclusions:
+    """One daemon-loop exclusions reload step.
+
+    Returns the revision to use for this cycle. A successful load becomes the
+    new last-known-good; a mid-flight broken file logs an ERROR and returns
+    the previous revision unchanged, so exclusion state persists across
+    arbitrarily many broken cycles and every run stays auditable via the
+    recorded hash.
+    """
+    exclusions, error = load_exclusions_with_fallback(exclusions_file, previous)
+    if error is not None:
+        logger.error(error)
+        return previous
+    return exclusions
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -262,6 +313,14 @@ def main() -> None:
         f'max_flagged_accounts={config.analysis.max_flagged_accounts}, resolution={config.analysis.resolution}, '
         f'min_cluster_size={config.analysis.min_cluster_size}, jaccard_threshold={config.analysis.jaccard_threshold}'
     )
+    previous_exclusions = _load_startup_exclusions(config.analysis.exclusions_file)
+    if previous_exclusions.is_empty():
+        logger.info('exclusions: none configured')
+    else:
+        logger.info(
+            f'exclusions loaded: {len(previous_exclusions.excluded_domains)} domains, '
+            f'{len(previous_exclusions.excluded_dids)} dids (hash={previous_exclusions.content_hash[:12]})'
+        )
 
     telemetry = setup_telemetry(config.telemetry)
     db = CosharingDb(config.clickhouse)
@@ -269,7 +328,13 @@ def main() -> None:
     try:
         while not _shutdown:
             try:
-                run_cycle(db, config, telemetry=telemetry)
+                # Per-cycle hot reload: edits to the exclusions file take
+                # effect next cycle. A mid-flight broken edit retains
+                # last-known-good (auditable via the recorded hash); the
+                # error is logged and the fallback only covers file
+                # breakage, not analysis failures.
+                previous_exclusions = reload_exclusions(config.analysis.exclusions_file, previous_exclusions)
+                run_cycle(db, config, telemetry=telemetry, exclusions=previous_exclusions)
             except Exception:
                 logger.exception('error during analysis cycle')
 

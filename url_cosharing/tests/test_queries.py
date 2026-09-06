@@ -4,8 +4,9 @@ from datetime import date
 
 import pytest
 
-from url_cosharing.config import AnalysisConfig
+from url_cosharing.config import AnalysisConfig, Exclusions
 from url_cosharing.queries import (
+    fetch_excluded_shares_count_query,
     fetch_historical_membership_query,
     fetch_member_timestamps_query,
     fetch_raw_account_count_query,
@@ -520,6 +521,80 @@ class TestFetchUrlSharesQuery:
         query = fetch_url_shares_query(config, AS_OF)
         assert 'custom_source_table' in query
 
+    def test_query_no_predicates_when_empty(self, base_config: AnalysisConfig) -> None:
+        """Default (empty) exclusions keep the query free of exclusion SQL."""
+        query = fetch_url_shares_query(base_config, AS_OF)
+        assert 'domain(url)' not in query
+        assert 'NOT IN' not in query
+        assert 'endsWith' not in query
+
+    def test_fetch_url_shares_query_excludes_domain(self, base_config: AnalysisConfig) -> None:
+        """AC.1: an excluded_domain entry removes that URL dimension for every
+        account inside url_shares, i.e. BEFORE df/eligibility/mono-URL math."""
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['static.klipy.com'], 'excluded_dids': []})
+        query = fetch_url_shares_query(base_config, AS_OF, exclusions)
+        # Predicate lives in the url_shares CTE, ahead of url_df / active_accounts
+        url_shares_section = query.split('url_df AS')[0]
+        assert "NOT (lower(domain(url)) = 'static.klipy.com'" in url_shares_section
+        assert 'url_df AS' in query
+        assert 'active_accounts AS' in query
+
+    def test_fetch_url_shares_query_excludes_dids(self, base_config: AnalysisConfig) -> None:
+        """AC.2: excluded_dids removes those accounts' shares in the same layer."""
+        exclusions = Exclusions.from_mapping(
+            {
+                'excluded_domains': [],
+                'excluded_dids': ['did:plc:weatherbot22222222222222', 'did:plc:planefence77777777777777'],
+            }
+        )
+        query = fetch_url_shares_query(base_config, AS_OF, exclusions)
+        assert "did NOT IN ('did:plc:planefence77777777777777','did:plc:weatherbot22222222222222')" in query
+
+    def test_multiple_domain_entries_combined_with_and(self, base_config: AnalysisConfig) -> None:
+        """A row is kept only if it survives EVERY domain entry."""
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['a.example.com', 'b.example.com'], 'excluded_dids': []})
+        query = fetch_url_shares_query(base_config, AS_OF, exclusions)
+        first = query.index("lower(domain(url)) = 'a.example.com'")
+        second = query.index("lower(domain(url)) = 'b.example.com'")
+        between = query[first:second]
+        assert 'AND NOT' in between
+
+    def test_suffix_match_is_dot_anchored(self, base_config: AnalysisConfig) -> None:
+        """AC.3: entry 'klipy.com' must match 'static.klipy.com' via the
+        dot-anchored '.klipy.com' suffix, and must never substring-match
+        'evil-klipy.com' (no unanchored endsWith)."""
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['klipy.com'], 'excluded_dids': []})
+        query = fetch_url_shares_query(base_config, AS_OF, exclusions)
+        assert "endsWith(lower(domain(url)), '.klipy.com')" in query
+        assert "endsWith(lower(domain(url)), 'klipy.com')" not in query
+
+
+class TestFetchExcludedSharesCountQuery:
+    def test_counts_rows_matching_any_exclusion(self, base_config: AnalysisConfig) -> None:
+        """The audit query is the positive (suppressed) counterpart of the
+        keep predicates: domain OR did hits."""
+        exclusions = Exclusions.from_mapping(
+            {'excluded_domains': ['static.klipy.com'], 'excluded_dids': ['did:plc:aaaaaaaaaaaaaaaaaaaaaaaa']}
+        )
+        query = fetch_excluded_shares_count_query(base_config, AS_OF, exclusions)
+        assert 'SELECT count()' in query
+        assert "(lower(domain(url)) = 'static.klipy.com' OR endsWith(lower(domain(url)), '.static.klipy.com'))" in query
+        assert "did IN ('did:plc:aaaaaaaaaaaaaaaaaaaaaaaa')" in query
+        assert ' OR ' in query
+
+    def test_window_matches_detection_window(self, base_config: AnalysisConfig) -> None:
+        exclusions = Exclusions.from_mapping({'excluded_domains': ['static.klipy.com'], 'excluded_dids': []})
+        query = fetch_excluded_shares_count_query(base_config, AS_OF, exclusions)
+        assert ">= toDate('2026-06-30')" in query
+        assert "<= toDate('2026-07-06')" in query
+
+    def test_empty_exclusions_produce_trivial_query(self, base_config: AnalysisConfig) -> None:
+        """Never executed by the orchestrator when exclusions are empty, but
+        must still generate valid SQL."""
+        query = fetch_excluded_shares_count_query(base_config, AS_OF, Exclusions.empty())
+        assert 'SELECT count()' in query
+        assert 'FROM expanded' in query
+
 
 class TestFetchRawAccountCountQuery:
     def test_counts_distinct_accounts_without_eligibility_filters(self, base_config: AnalysisConfig) -> None:
@@ -531,7 +606,14 @@ class TestFetchRawAccountCountQuery:
         assert 'df' not in query
 
     def test_mirrors_url_shares_population(self, base_config: AnalysisConfig) -> None:
-        """Same source and row predicates as the url_shares CTE."""
+        """Same source and row filters as the url_shares CTE pre-exclusion.
+
+        accounts_raw is deliberately the PRE-exclusion window population
+        (issue #4 decision): exclusion predicates apply only inside
+        fetch_url_shares_query, so their suppression intentionally surfaces
+        as extra accounts_raw -> accounts_eligible attrition, quantified per
+        run by excluded_shares_suppressed.
+        """
         query = fetch_raw_account_count_query(base_config, AS_OF)
         assert 'osprey_execution_results' in query
         assert "Collection = 'app.bsky.feed.post'" in query

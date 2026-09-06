@@ -40,6 +40,13 @@ class RunMetadata:
     guardrail_triggered: bool
     flagged_accounts: int
     cluster_count: int
+    # Exclusion audit fields (defaults = empty-exclusions semantics, so
+    # existing constructions remain valid): counts of applied entries, the
+    # applied revision hash, and the share rows the exclusions suppressed.
+    excluded_domains_count: int = 0
+    excluded_dids_count: int = 0
+    exclusions_hash: str = ''
+    excluded_shares_suppressed: int = 0
 
 
 class CosharingDb:
@@ -69,6 +76,15 @@ class CosharingDb:
         return rows
 
     def fetch_raw_account_count(self, query: str) -> int:
+        result = self._client.query(
+            query,
+            settings={'max_execution_time': 300},
+        )
+        if not result.result_rows:
+            return 0
+        return int(result.result_rows[0][0])
+
+    def fetch_excluded_shares_count(self, query: str) -> int:
         result = self._client.query(
             query,
             settings={'max_execution_time': 300},
@@ -185,6 +201,10 @@ class CosharingDb:
             'guardrail_triggered',
             'flagged_accounts',
             'cluster_count',
+            'excluded_domains_count',
+            'excluded_dids_count',
+            'exclusions_hash',
+            'excluded_shares_suppressed',
         ]
         data = [[
             run.run_date,
@@ -200,6 +220,10 @@ class CosharingDb:
             run.guardrail_triggered,
             run.flagged_accounts,
             run.cluster_count,
+            run.excluded_domains_count,
+            run.excluded_dids_count,
+            run.exclusions_hash,
+            run.excluded_shares_suppressed,
         ]]
         self._client.insert(table=table, data=data, column_names=column_names)
 

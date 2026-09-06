@@ -12,7 +12,7 @@ import logging
 import sys
 from datetime import date
 
-from url_cosharing.config import AppConfig
+from url_cosharing.config import AppConfig, Exclusions, load_exclusions
 from url_cosharing.db import CosharingDb
 from url_cosharing.dismantling import DismantlingResult, dismantle
 from url_cosharing.queries import fetch_raw_account_count_query, fetch_url_shares_query
@@ -50,6 +50,13 @@ def format_surface(network: SimilarityNetwork, result: DismantlingResult, accoun
 def main() -> None:
     config = AppConfig.from_env()
     analysis = config.analysis
+    # Fail fast on a missing/invalid exclusions file; the dump must reflect
+    # the exclusions the sidecar would actually apply.
+    try:
+        exclusions = load_exclusions(analysis.exclusions_file) if analysis.exclusions_file else Exclusions.empty()
+    except (OSError, ValueError) as exc:
+        logger.error(f'failed to load exclusions: {exc}')
+        sys.exit(2)
     telemetry = setup_telemetry(config.telemetry)
     db = CosharingDb(config.clickhouse)
     try:
@@ -61,7 +68,7 @@ def main() -> None:
             set_status_on_exception=False,
         ):
             with stage_span(telemetry, 'url_cosharing.calibrate.fetch_url_shares'):
-                rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of))
+                rows = db.fetch_url_shares(fetch_url_shares_query(analysis, as_of, exclusions))
             logger.info(f'fetched {len(rows)} share rows')
             with stage_span(telemetry, 'url_cosharing.calibrate.fetch_raw_account_count'):
                 accounts_raw = db.fetch_raw_account_count(fetch_raw_account_count_query(analysis, as_of))

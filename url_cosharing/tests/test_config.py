@@ -1,7 +1,16 @@
 # pattern: Functional Core
 import pytest
 
-from url_cosharing.config import AnalysisConfig, AppConfig, ClickHouseConfig, TelemetryConfig
+from url_cosharing.config import (
+    AnalysisConfig,
+    AppConfig,
+    ClickHouseConfig,
+    Exclusions,
+    TelemetryConfig,
+    load_exclusions,
+    load_exclusions_with_fallback,
+    parse_exclusions,
+)
 
 
 @pytest.fixture
@@ -477,3 +486,168 @@ class TestAppConfig:
         assert config.clickhouse.host == 'localhost'
         assert config.analysis.resolution == 0.05
         assert config.telemetry.enabled is False
+
+
+class TestExclusions:
+    def test_empty_revision(self) -> None:
+        exclusions = Exclusions.empty()
+        assert exclusions.excluded_domains == ()
+        assert exclusions.excluded_dids == ()
+        assert exclusions.is_empty()
+
+    def test_empty_hash_matches_zero_entry_revision(self) -> None:
+        """empty() must be indistinguishable from a file with empty lists."""
+        from_file = Exclusions.from_mapping({'excluded_domains': [], 'excluded_dids': []})
+        assert from_file == Exclusions.empty()
+        assert Exclusions.from_mapping({}) == Exclusions.empty()
+
+    def test_parse_exclusions_valid(self) -> None:
+        exclusions = parse_exclusions(
+            'excluded_domains:\n  - static.klipy.com\nexcluded_dids:\n  - did:plc:aaaaaaaaaaaaaaaaaaaaaaaa\n'
+        )
+        assert exclusions.excluded_domains == ('static.klipy.com',)
+        assert exclusions.excluded_dids == ('did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',)
+        assert not exclusions.is_empty()
+
+    def test_parse_exclusions_normalizes_domains(self) -> None:
+        """Domains are stripped, lowercased, deduped, and sorted."""
+        exclusions = parse_exclusions(
+            'excluded_domains:\n  - " Static.Klipy.com "\n  - static.klipy.com\n  - a.example.com\n'
+        )
+        assert exclusions.excluded_domains == ('a.example.com', 'static.klipy.com')
+
+    def test_parse_exclusions_empty_text(self) -> None:
+        assert parse_exclusions('') == Exclusions.empty()
+        assert parse_exclusions('   \n') == Exclusions.empty()
+        assert parse_exclusions(None) == Exclusions.empty()
+
+    def test_parse_exclusions_comments_only(self) -> None:
+        """A comments-only file is the operator's 'disable by commenting out'
+        workflow: a null YAML document, not an error."""
+        assert parse_exclusions('# excluded_domains:\n#   - static.klipy.com\n') == Exclusions.empty()
+
+    def test_parse_exclusions_rejects_non_mapping(self) -> None:
+        with pytest.raises(ValueError, match='must be a YAML mapping'):
+            parse_exclusions('- static.klipy.com\n')
+
+    def test_parse_exclusions_rejects_unknown_keys(self) -> None:
+        """Typo protection: `excluded_domain:` must fail loudly, not silently
+        exclude nothing."""
+        with pytest.raises(ValueError, match='unknown exclusions keys'):
+            parse_exclusions('excluded_domain:\n  - static.klipy.com\n')
+
+    def test_parse_exclusions_rejects_non_list(self) -> None:
+        with pytest.raises(ValueError, match='must be YAML lists'):
+            parse_exclusions('excluded_domains: static.klipy.com\n')
+
+    def test_parse_exclusions_rejects_non_string_domain(self) -> None:
+        with pytest.raises(ValueError, match='must be strings'):
+            parse_exclusions('excluded_domains:\n  - 123\n')
+
+    def test_parse_exclusions_rejects_invalid_domain(self) -> None:
+        """Junk hostnames would produce silently-never-matching predicates."""
+        for bad in ['..', '-', '.klipy.com', 'klipy', 'http://klipy.com', 'klipy.com/path', '-klipy.com']:
+            with pytest.raises(ValueError, match='invalid hostname'):
+                parse_exclusions(f'excluded_domains:\n  - "{bad}"\n')
+
+    def test_parse_exclusions_rejects_invalid_yaml(self) -> None:
+        with pytest.raises(ValueError, match='invalid exclusions YAML'):
+            parse_exclusions('excluded_domains: [unclosed\n')
+
+    def test_parse_exclusions_validates_dids(self) -> None:
+        """DIDs must be full did:plc identifiers: 'did:plc:' + 24 chars of
+        [a-z2-7]. Shorter/looser shapes would produce silently-never-matching
+        predicates."""
+        bad = [
+            'did:web:example.com',
+            'not-a-did',
+            "did:plc:abc'; DROP TABLE--",
+            'DID:PLC:ABC',
+            'did:plc:',
+            'did:plc:abcdefghij',  # too short
+            'did:plc:aaaaaaaaaaaaaaaaaaaaaaaaa',  # 25 chars, too long
+            'did:plc:aaaaaaa0aaaaaaa1aaaaaaaa',  # 0/1 not in base32 alphabet
+        ]
+        for entry in bad:
+            with pytest.raises(ValueError, match='invalid DID'):
+                parse_exclusions(f'excluded_dids:\n  - "{entry}"\n')
+
+    def test_parse_exclusions_sql_metacharacters_rejected_by_did_pattern(self) -> None:
+        """Injection defence: quote/backslash payloads cannot survive validation,
+        so the generated SQL cannot be broken out of."""
+        with pytest.raises(ValueError, match='invalid DID'):
+            parse_exclusions("excluded_dids:\n  - \"did:plc:abc','did:plc:evil\"\n")
+
+    def test_content_hash_stable_and_content_sensitive(self) -> None:
+        """Same entries in any order/duplication hash identically; any content
+        change changes the hash."""
+        base = parse_exclusions('excluded_domains:\n  - a.example.com\n  - b.example.com\n')
+        reordered = parse_exclusions('excluded_domains:\n  - b.example.com\n  - a.example.com\n  - a.example.com\n')
+        assert base.content_hash == reordered.content_hash
+        assert base.excluded_domains == reordered.excluded_domains
+
+        extra = parse_exclusions('excluded_domains:\n  - a.example.com\n  - b.example.com\n  - c.example.com\n')
+        assert extra.content_hash != base.content_hash
+
+        with_did = parse_exclusions('excluded_dids:\n  - did:plc:aaaaaaaaaaaaaaaaaaaaaaaa\n')
+        assert with_did.content_hash != base.content_hash
+        assert with_did.content_hash != Exclusions.empty().content_hash
+
+    def test_load_exclusions_reads_file(self, tmp_path) -> None:
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('excluded_domains:\n  - static.klipy.com\n', encoding='utf-8')
+        exclusions = load_exclusions(str(path))
+        assert exclusions.excluded_domains == ('static.klipy.com',)
+
+    def test_load_exclusions_missing_file_raises_oserror(self, tmp_path) -> None:
+        with pytest.raises(OSError):
+            load_exclusions(str(tmp_path / 'missing.yaml'))
+
+    def test_load_exclusions_invalid_file_raises_valueerror(self, tmp_path) -> None:
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('excluded_domain:\n  - static.klipy.com\n', encoding='utf-8')
+        with pytest.raises(ValueError):
+            load_exclusions(str(path))
+
+    def test_load_exclusions_with_fallback_none_path(self) -> None:
+        """The file is not required when the env var is unset."""
+        exclusions, error = load_exclusions_with_fallback(None, Exclusions.empty())
+        assert exclusions == Exclusions.empty()
+        assert error is None
+
+    def test_load_exclusions_with_fallback_success(self, tmp_path) -> None:
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('excluded_domains:\n  - static.klipy.com\n', encoding='utf-8')
+        exclusions, error = load_exclusions_with_fallback(str(path), Exclusions.empty())
+        assert exclusions.excluded_domains == ('static.klipy.com',)
+        assert error is None
+
+    def test_load_exclusions_with_fallback_missing_file_retains_previous(self, tmp_path) -> None:
+        """Mid-flight file removal keeps last-known-good for the cycle."""
+        previous = parse_exclusions('excluded_domains:\n  - klipy.com\n')
+        exclusions, error = load_exclusions_with_fallback(str(tmp_path / 'missing.yaml'), previous)
+        assert exclusions is previous
+        assert error is not None and 'missing.yaml' in error
+
+    def test_load_exclusions_with_fallback_invalid_file_retains_previous(self, tmp_path) -> None:
+        previous = parse_exclusions('excluded_domains:\n  - klipy.com\n')
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('not: [valid\n', encoding='utf-8')
+        exclusions, error = load_exclusions_with_fallback(str(path), previous)
+        assert exclusions is previous
+        assert error is not None
+
+    def test_exclusions_file_env_var(self, monkeypatch) -> None:
+        monkeypatch.delenv('URL_COSHARING_EXCLUSIONS_FILE', raising=False)
+        assert AnalysisConfig.from_env().exclusions_file is None
+
+        monkeypatch.setenv('URL_COSHARING_EXCLUSIONS_FILE', '')
+        assert AnalysisConfig.from_env().exclusions_file is None
+
+        monkeypatch.setenv('URL_COSHARING_EXCLUSIONS_FILE', '/config/exclusions.yaml')
+        assert AnalysisConfig.from_env().exclusions_file == '/config/exclusions.yaml'
+
+    def test_exclusions_is_frozen(self) -> None:
+        exclusions = Exclusions.empty()
+        with pytest.raises(AttributeError):
+            exclusions.excluded_domains = ('a.example.com',)  # type: ignore[misc]
