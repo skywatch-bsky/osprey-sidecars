@@ -82,8 +82,9 @@ excluded_domains:
   # match is dot-anchored).
   - static.klipy.com
 excluded_dids:
-  # Exact DIDs; the account and all its shares are removed.
-  - did:plc:example1234567890abcdef
+  # Exact DIDs (did:plc: + 24 chars of [a-z2-7]); the account and all
+  # its shares are removed.
+  - did:plc:aaaaaaaaaaaaaaaaaaaaaaaa  # example DID
 ```
 
 Semantics:
@@ -93,7 +94,8 @@ Semantics:
 - **Hot reload**: the daemon reloads the file every cycle — edits take effect next cycle, no restart. `backfill` and `calibrate` load once at startup instead.
 - **Failure handling**: unset env var → no exclusions (the file is not required). Env var set but the file missing/invalid at startup → the process exits non-zero. A file that breaks **mid-flight** → last-known-good exclusions stay in effect for that cycle and an ERROR is logged.
 - **Auditability**: every run writes the applied revision to `url_cosharing_runs` (`excluded_domains_count`, `excluded_dids_count`, `exclusions_hash`, `excluded_shares_suppressed`), so results remain attributable to a specific exclusions revision.
-- **Validation**: domains must be lowercase hostnames (`label.second-label` shape); DIDs must match `did:plc:[a-z0-9]+`. Unknown top-level keys are rejected (typo protection). These restrictions also make direct interpolation into the generated SQL safe.
+- **Validation**: domains are normalized to lowercase and must be hostnames (`label.second-label` shape); DIDs must be full `did:plc` identifiers (`did:plc:` + 24 chars of `[a-z2-7]`). Unknown top-level keys are rejected (typo protection). These restrictions also make direct interpolation into the generated SQL safe.
+- **Deploy order**: the four audit columns on `url_cosharing_runs` require the companion DDL in skywatch-osprey (`clickhouse-init/05-url-cosharing.sql` ALTERs). The compose `clickhouse-init` service only runs on first volume init, so apply the ALTERs to an existing cluster **before** deploying this sidecar version — otherwise run-metadata inserts fail every cycle.
 
 ## Output schema
 

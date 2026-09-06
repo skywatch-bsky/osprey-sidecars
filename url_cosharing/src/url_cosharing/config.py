@@ -17,7 +17,10 @@ _TABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_.]+$')
 # f-string interpolation into SQL safe (defence-in-depth, same rationale
 # as _sanitize_did in main.py).
 _DOMAIN_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
-_DID_PATTERN = re.compile(r'^did:plc:[a-z0-9]+$')
+# did:plc identifiers are 24-char base32-sortable strings ([a-z2-7], no
+# 0/1/8/9). Validating the full shape (not just the prefix) prevents
+# malformed entries that would produce silently-never-matching predicates.
+_DID_PATTERN = re.compile(r'^did:plc:[a-z2-7]{24}$')
 
 _EXCLUSIONS_KEYS = frozenset({'excluded_domains', 'excluded_dids'})
 
@@ -122,7 +125,9 @@ class Exclusions:
             if not isinstance(entry, str):
                 raise ValueError(f'excluded_dids entries must be strings: {entry!r}')
             if not _DID_PATTERN.match(entry.strip()):
-                raise ValueError(f'invalid DID in excluded_dids (expected did:plc:[a-z0-9]+): {entry!r}')
+                raise ValueError(
+                    f'invalid DID in excluded_dids (expected did:plc: + 24 chars of [a-z2-7]): {entry!r}'
+                )
             dids.append(entry.strip())
 
         domains = sorted(set(domains))
@@ -138,7 +143,9 @@ class Exclusions:
 def parse_exclusions(raw_text: str | None) -> Exclusions:
     """Parse exclusions YAML text into an Exclusions revision (Functional Core).
 
-    Empty or whitespace-only text yields the empty revision.
+    Empty, whitespace-only, or comments-only text yields the empty revision
+    (a comments-only file parses to a null YAML document — that is the
+    operator's "disable everything by commenting out" workflow, not an error).
     """
     if raw_text is None or not raw_text.strip():
         return Exclusions.empty()
@@ -146,6 +153,8 @@ def parse_exclusions(raw_text: str | None) -> Exclusions:
         data = yaml.safe_load(raw_text)
     except yaml.YAMLError as exc:
         raise ValueError(f'invalid exclusions YAML: {exc}') from exc
+    if data is None:
+        return Exclusions.empty()
     return Exclusions.from_mapping(data)
 
 

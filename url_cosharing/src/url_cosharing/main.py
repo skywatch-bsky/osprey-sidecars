@@ -284,6 +284,22 @@ def _load_startup_exclusions(exclusions_file: str | None) -> Exclusions:
         raise SystemExit(1) from exc
 
 
+def reload_exclusions(exclusions_file: str | None, previous: Exclusions) -> Exclusions:
+    """One daemon-loop exclusions reload step.
+
+    Returns the revision to use for this cycle. A successful load becomes the
+    new last-known-good; a mid-flight broken file logs an ERROR and returns
+    the previous revision unchanged, so exclusion state persists across
+    arbitrarily many broken cycles and every run stays auditable via the
+    recorded hash.
+    """
+    exclusions, error = load_exclusions_with_fallback(exclusions_file, previous)
+    if error is not None:
+        logger.error(error)
+        return previous
+    return exclusions
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -317,14 +333,8 @@ def main() -> None:
                 # last-known-good (auditable via the recorded hash); the
                 # error is logged and the fallback only covers file
                 # breakage, not analysis failures.
-                exclusions, reload_error = load_exclusions_with_fallback(
-                    config.analysis.exclusions_file, previous_exclusions
-                )
-                if reload_error is not None:
-                    logger.error(reload_error)
-                else:
-                    previous_exclusions = exclusions
-                run_cycle(db, config, telemetry=telemetry, exclusions=exclusions)
+                previous_exclusions = reload_exclusions(config.analysis.exclusions_file, previous_exclusions)
+                run_cycle(db, config, telemetry=telemetry, exclusions=previous_exclusions)
             except Exception:
                 logger.exception('error during analysis cycle')
 

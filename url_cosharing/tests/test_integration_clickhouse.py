@@ -107,7 +107,7 @@ def test_exclusion_predicates_against_live_clickhouse(db: CosharingDb) -> None:
         (datetime(2026, 7, 7, 10, 3, 0), 'did:plc:sharer', 'app.bsky.feed.post', 'create', ['https://evil-klipy.com/gif.gif']),
         (datetime(2026, 7, 7, 10, 4, 0), 'did:plc:sharer', 'app.bsky.feed.post', 'create', ['https://example.com/page.gif']),
         # a did-excluded account sharing a benign URL
-        (datetime(2026, 7, 7, 10, 5, 0), 'did:plc:excludeme', 'app.bsky.feed.post', 'create', ['https://example.com/mine.gif']),
+        (datetime(2026, 7, 7, 10, 5, 0), 'did:plc:excludemexxxxxxxxxxxxxxx', 'app.bsky.feed.post', 'create', ['https://example.com/mine.gif']),
     ]
     client.insert(
         table=SCRATCH_TABLE,
@@ -119,7 +119,7 @@ def test_exclusion_predicates_against_live_clickhouse(db: CosharingDb) -> None:
     exclusions = Exclusions.from_mapping(
         {
             'excluded_domains': ['klipy.com'],
-            'excluded_dids': ['did:plc:excludeme'],
+            'excluded_dids': ['did:plc:excludemexxxxxxxxxxxxxxx'],
         }
     )
 
@@ -135,7 +135,7 @@ def test_exclusion_predicates_against_live_clickhouse(db: CosharingDb) -> None:
     # Benign URL survives.
     assert ('did:plc:sharer', 'https://example.com/page.gif') in returned
     # Exact DID exclusion removes the account entirely.
-    assert not any(did == 'did:plc:excludeme' for did, _ in returned)
+    assert not any(did == 'did:plc:excludemexxxxxxxxxxxxxxx' for did, _ in returned)
 
     suppressed = db.fetch_excluded_shares_count(
         fetch_excluded_shares_count_query(config, date(2026, 7, 8), exclusions)

@@ -544,11 +544,11 @@ class TestFetchUrlSharesQuery:
         exclusions = Exclusions.from_mapping(
             {
                 'excluded_domains': [],
-                'excluded_dids': ['did:plc:weatherbot01', 'did:plc:planefence42'],
+                'excluded_dids': ['did:plc:weatherbot22222222222222', 'did:plc:planefence77777777777777'],
             }
         )
         query = fetch_url_shares_query(base_config, AS_OF, exclusions)
-        assert "did NOT IN ('did:plc:planefence42','did:plc:weatherbot01')" in query
+        assert "did NOT IN ('did:plc:planefence77777777777777','did:plc:weatherbot22222222222222')" in query
 
     def test_multiple_domain_entries_combined_with_and(self, base_config: AnalysisConfig) -> None:
         """A row is kept only if it survives EVERY domain entry."""
@@ -574,12 +574,12 @@ class TestFetchExcludedSharesCountQuery:
         """The audit query is the positive (suppressed) counterpart of the
         keep predicates: domain OR did hits."""
         exclusions = Exclusions.from_mapping(
-            {'excluded_domains': ['static.klipy.com'], 'excluded_dids': ['did:plc:x']}
+            {'excluded_domains': ['static.klipy.com'], 'excluded_dids': ['did:plc:aaaaaaaaaaaaaaaaaaaaaaaa']}
         )
         query = fetch_excluded_shares_count_query(base_config, AS_OF, exclusions)
         assert 'SELECT count()' in query
         assert "(lower(domain(url)) = 'static.klipy.com' OR endsWith(lower(domain(url)), '.static.klipy.com'))" in query
-        assert "did IN ('did:plc:x')" in query
+        assert "did IN ('did:plc:aaaaaaaaaaaaaaaaaaaaaaaa')" in query
         assert ' OR ' in query
 
     def test_window_matches_detection_window(self, base_config: AnalysisConfig) -> None:

@@ -55,8 +55,8 @@ def _expanded_shares_cte(config: AnalysisConfig, as_of: date, indent: str) -> st
 
     Splitting expansion from aggregation keeps exclusion predicates plain
     column references (no alias-in-WHERE scoping questions) and leaves the
-    query byte-identical to the pre-exclusions shape when exclusions are
-    empty. `indent` aligns the CTE inside its parent query.
+    query semantically identical to the pre-exclusions shape when exclusions
+    are empty. `indent` aligns the CTE inside its parent query.
     """
     window_start, window_end = _window_bounds(config, as_of)
     lines = [

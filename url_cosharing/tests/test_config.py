@@ -503,10 +503,10 @@ class TestExclusions:
 
     def test_parse_exclusions_valid(self) -> None:
         exclusions = parse_exclusions(
-            'excluded_domains:\n  - static.klipy.com\nexcluded_dids:\n  - did:plc:abc123\n'
+            'excluded_domains:\n  - static.klipy.com\nexcluded_dids:\n  - did:plc:aaaaaaaaaaaaaaaaaaaaaaaa\n'
         )
         assert exclusions.excluded_domains == ('static.klipy.com',)
-        assert exclusions.excluded_dids == ('did:plc:abc123',)
+        assert exclusions.excluded_dids == ('did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',)
         assert not exclusions.is_empty()
 
     def test_parse_exclusions_normalizes_domains(self) -> None:
@@ -520,6 +520,11 @@ class TestExclusions:
         assert parse_exclusions('') == Exclusions.empty()
         assert parse_exclusions('   \n') == Exclusions.empty()
         assert parse_exclusions(None) == Exclusions.empty()
+
+    def test_parse_exclusions_comments_only(self) -> None:
+        """A comments-only file is the operator's 'disable by commenting out'
+        workflow: a null YAML document, not an error."""
+        assert parse_exclusions('# excluded_domains:\n#   - static.klipy.com\n') == Exclusions.empty()
 
     def test_parse_exclusions_rejects_non_mapping(self) -> None:
         with pytest.raises(ValueError, match='must be a YAML mapping'):
@@ -550,10 +555,22 @@ class TestExclusions:
             parse_exclusions('excluded_domains: [unclosed\n')
 
     def test_parse_exclusions_validates_dids(self) -> None:
-        """AC.2: DIDs must match did:plc:[a-z0-9]+ exactly."""
-        for bad in ['did:web:example.com', 'not-a-did', "did:plc:abc'; DROP TABLE--", 'DID:PLC:ABC', 'did:plc:']:
+        """DIDs must be full did:plc identifiers: 'did:plc:' + 24 chars of
+        [a-z2-7]. Shorter/looser shapes would produce silently-never-matching
+        predicates."""
+        bad = [
+            'did:web:example.com',
+            'not-a-did',
+            "did:plc:abc'; DROP TABLE--",
+            'DID:PLC:ABC',
+            'did:plc:',
+            'did:plc:abcdefghij',  # too short
+            'did:plc:aaaaaaaaaaaaaaaaaaaaaaaaa',  # 25 chars, too long
+            'did:plc:aaaaaaa0aaaaaaa1aaaaaaaa',  # 0/1 not in base32 alphabet
+        ]
+        for entry in bad:
             with pytest.raises(ValueError, match='invalid DID'):
-                parse_exclusions(f'excluded_dids:\n  - "{bad}"\n')
+                parse_exclusions(f'excluded_dids:\n  - "{entry}"\n')
 
     def test_parse_exclusions_sql_metacharacters_rejected_by_did_pattern(self) -> None:
         """Injection defence: quote/backslash payloads cannot survive validation,
@@ -572,7 +589,7 @@ class TestExclusions:
         extra = parse_exclusions('excluded_domains:\n  - a.example.com\n  - b.example.com\n  - c.example.com\n')
         assert extra.content_hash != base.content_hash
 
-        with_did = parse_exclusions('excluded_dids:\n  - did:plc:abc\n')
+        with_did = parse_exclusions('excluded_dids:\n  - did:plc:aaaaaaaaaaaaaaaaaaaaaaaa\n')
         assert with_did.content_hash != base.content_hash
         assert with_did.content_hash != Exclusions.empty().content_hash
 

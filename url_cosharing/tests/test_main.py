@@ -583,6 +583,46 @@ class TestRunCycle:
             )
 
 
+class TestReloadExclusions:
+    """The daemon-loop state machine: last-known-good persists across broken
+    reloads, and a good load becomes the new last-known-good."""
+
+    def test_good_load_updates_state(self, tmp_path) -> None:
+        from url_cosharing.main import reload_exclusions
+
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('excluded_domains:\n  - klipy.com\n', encoding='utf-8')
+
+        first = reload_exclusions(str(path), Exclusions.empty())
+        assert first.excluded_domains == ('klipy.com',)
+
+        # Unchanged file: same revision again
+        second = reload_exclusions(str(path), first)
+        assert second == first
+
+    def test_broken_file_retains_previous_across_cycles(self, tmp_path) -> None:
+        """good -> broken -> still-broken: every cycle uses the last-known-good
+        revision; a later fix resumes hot reload."""
+        from url_cosharing.main import reload_exclusions
+
+        path = tmp_path / 'exclusions.yaml'
+        path.write_text('excluded_domains:\n  - klipy.com\n', encoding='utf-8')
+        last_good = reload_exclusions(str(path), Exclusions.empty())
+
+        path.write_text('not: [valid\n', encoding='utf-8')
+        assert reload_exclusions(str(path), last_good) is last_good
+        assert reload_exclusions(str(path), last_good) is last_good  # persists
+
+        path.write_text('excluded_domains:\n  - new.example.com\n', encoding='utf-8')
+        recovered = reload_exclusions(str(path), last_good)
+        assert recovered.excluded_domains == ('new.example.com',)
+
+    def test_none_path_keeps_empty(self) -> None:
+        from url_cosharing.main import reload_exclusions
+
+        assert reload_exclusions(None, Exclusions.empty()) == Exclusions.empty()
+
+
 class TestRunCycleExplicitRunDate:
     def test_explicit_run_date_anchors_the_whole_cycle(self, app_config: AppConfig) -> None:
         """run_cycle(run_date=...) writes and clears rows for that date, not today."""
@@ -638,11 +678,11 @@ class TestRunCycleExclusions:
         self._minimal_shares(fake_db)
 
         exclusions = Exclusions.from_mapping(
-            {'excluded_domains': [], 'excluded_dids': ['did:plc:weatherbot01']}
+            {'excluded_domains': [], 'excluded_dids': ['did:plc:weatherbot22222222222222']}
         )
         run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), exclusions=exclusions)
 
-        assert "did NOT IN ('did:plc:weatherbot01')" in fake_db.captured_share_queries[0]
+        assert "did NOT IN ('did:plc:weatherbot22222222222222')" in fake_db.captured_share_queries[0]
 
     def test_audit_metadata_recorded(
         self,
@@ -656,7 +696,7 @@ class TestRunCycleExclusions:
         self._minimal_shares(fake_db)
 
         exclusions = Exclusions.from_mapping(
-            {'excluded_domains': ['static.klipy.com', 'klipy.com'], 'excluded_dids': ['did:plc:weatherbot01']}
+            {'excluded_domains': ['static.klipy.com', 'klipy.com'], 'excluded_dids': ['did:plc:weatherbot22222222222222']}
         )
         run_cycle(fake_db, app_config, run_date=date(2026, 7, 7), exclusions=exclusions)
 
