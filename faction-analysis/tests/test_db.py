@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from faction_analysis import db as db_module
 from faction_analysis import queries, schema
 from faction_analysis.config import AppConfig
 from faction_analysis.db import FactionAnalysisDb
@@ -124,7 +125,23 @@ def test_every_call_carries_the_query_settings() -> None:
     ]
     assert client.calls
     for _, _, settings in client.calls:
-        assert settings == {'max_threads': 2, 'max_execution_time': 3600, 'max_memory_usage': 20_000_000_000}
+        assert settings == {
+            'max_threads': 2,
+            'max_execution_time': 3600,
+            'max_memory_usage': 20_000_000_000,
+            'max_query_size': db_module.MAX_QUERY_SIZE,
+        }
+
+
+def test_repository_settings_allow_the_largest_literal_query() -> None:
+    repository, client = make_db()
+    repository.fetch_account_hashes(WINDOW)
+
+    settings = client.calls[-1][2]
+    assert isinstance(settings, dict)
+    assert settings['max_query_size'] == db_module.MAX_QUERY_SIZE
+    assert db_module.MAX_QUERY_SIZE > db_module.HASH_CHUNK * 32
+    assert db_module.MAX_QUERY_SIZE > db_module.URI_CHUNK * 4104
 
 
 def test_stream_follow_creates_yields_typed_blocks() -> None:

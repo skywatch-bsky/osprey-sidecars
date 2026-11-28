@@ -192,9 +192,9 @@ GROUP BY h{_limit(limit)}"""
 
 # Structural features of the text, computed where the text is read. ClickHouse counts them on tens of
 # millions of rows at no cost, and the training set and the scoring read the same columns. ``uppercase`` is
-# the number of ASCII characters that ``lower`` changes: shouting in Latin script.
+# the count of ASCII uppercase letters: shouting in Latin script.
 STRUCTURAL_COLUMNS = """toUInt32(lengthUTF8(assumeNotNull(PostText))) AS text_length,
-    toUInt32(length(assumeNotNull(PostText)) - length(lower(assumeNotNull(PostText)))) AS uppercase,
+    toUInt32(countMatches(assumeNotNull(PostText), '[A-Z]')) AS uppercase,
     toUInt32(countSubstrings(assumeNotNull(PostText), '!')) AS exclamations,
     toUInt32(countSubstrings(assumeNotNull(PostText), '?')) AS questions,
     toUInt32(countSubstrings(assumeNotNull(PostText), '@')) AS mentions"""

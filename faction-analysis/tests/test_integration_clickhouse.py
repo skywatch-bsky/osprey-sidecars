@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from faction_analysis import db as db_module
 from faction_analysis import export_dataset, lock, model_store, pipeline, schema
 from faction_analysis.config import AppConfig
 from faction_analysis.db import ClickHouseClient, FactionAnalysisDb
@@ -391,6 +392,44 @@ def test_end_to_end_full_then_weekly(scratch: Any, tmp_path: Path) -> None:
     assert live.promoted_ids() == sorted([first.run_id, second.run_id, third.run_id, fourth.run_id])
     assert len(live.rows(schema.MOVES, fourth.run_id)) == 0
     assert len(live.rows(schema.LINEAGE, fourth.run_id)) == 0
+
+
+def test_interactions_uppercase_matches_ascii_count(scratch: Any, tmp_path: Path) -> None:
+    live = Live(scratch, tmp_path)
+    live.seed()
+    run = live.poll('full')
+    assert run.status == 'promoted', run.reason
+    assert run.run_id is not None
+    row = live.run_row(run.run_id)
+    interactions = pd.concat(live.repo.stream_interactions(Window(row.window_start, row.window_end)), ignore_index=True)
+    expected = [sum('A' <= char <= 'Z' for char in text) for text in interactions['text'].fillna('')]
+    assert interactions['uppercase'].astype(int).tolist() == expected
+    assert any(expected)
+
+
+def test_classifier_lookup_chunks_fit_clickhouse_query_size(scratch: Any, tmp_path: Path) -> None:
+    live = Live(scratch, tmp_path)
+    live.seed()
+    first = live.poll('full')
+    assert first.status == 'promoted', first.reason
+    row = live.run_row(first.run_id)
+    window = Window(row.window_start, row.window_end)
+    hashes = list(range(2**63, 2**63 + db_module.HASH_CHUNK))
+    frame = live.repo.fetch_interaction_texts(window, hashes)
+    assert isinstance(frame, pd.DataFrame)
+    uris = [f'at://did:plc:{index:024x}/app.bsky.feed.post/{index:040d}' for index in range(db_module.URI_CHUNK)]
+    source = world.Source()
+    source.add(
+        world.recent_ms(live.now),
+        Collection=world.POST,
+        OperationKind=world.CREATE,
+        UserId=world.account_dids()[0],
+        AtUri=uris[0],
+        PostText='parent text',
+    )
+    scratch.client.insert(scratch.source, source.as_rows(), column_names=list(world.SOURCE_COLUMNS))
+    parents = live.repo.fetch_parent_texts(window, uris)
+    assert isinstance(parents, dict)
 
 
 def test_extraction_to_membership_preserves_dids(scratch: Any, tmp_path: Path) -> None:

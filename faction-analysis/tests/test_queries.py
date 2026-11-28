@@ -124,6 +124,12 @@ def test_every_hash_is_plain_uint64_even_though_source_columns_are_nullable() ->
             assert call == 'cityHash64(a.did)' or 'assumeNotNull(' in call, f'{call} in {sql[:60]}'
 
 
+def test_interactions_count_ascii_uppercase_letters_directly() -> None:
+    sql = queries.interactions_sql(SOURCE, WINDOW)
+    assert "toUInt32(countMatches(assumeNotNull(PostText), '[A-Z]')) AS uppercase" in sql
+    assert 'length(assumeNotNull(PostText)) - length(lower(assumeNotNull(PostText)))' not in sql
+
+
 def test_replies_require_a_non_self_reply_with_a_parent_author() -> None:
     sql = queries.interactions_sql(SOURCE, WINDOW)
     assert 'coalesce(PostIsReply, 0) = 1' in sql

@@ -665,7 +665,8 @@ def _track(
         position = pd.Index(previous.did).get_indexer(dids)
         found = position >= 0
         previous_faction[found] = previous.faction[position[found]]
-        carried = np.array(
+        carried = np.full(vertices, np.nan, dtype=np.float64)
+        carried[found] = np.array(
             [np.nan if value is None else float(value) for value in previous.confidence[position[found]]],
             dtype=np.float64,
         )

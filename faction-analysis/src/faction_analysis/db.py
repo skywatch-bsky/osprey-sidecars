@@ -87,7 +87,7 @@ class FactionAnalysisDb:
         self._client: ClickHouseClient = client
 
     def _settings(self) -> dict[str, int]:
-        return self._query.settings
+        return {**self._query.settings, 'max_query_size': MAX_QUERY_SIZE}
 
     def _table(self, noun: str) -> str:
         return self._query.table(noun)
@@ -350,6 +350,9 @@ LABEL_DTYPE = np.dtype([('uri_hash', '<u8'), ('kind', 'i1'), ('event_ms', '<i8')
 BLOCK_DTYPE = np.dtype([('uri_hash', '<u8'), ('event_ms', '<i8'), ('blocker', '<u8'), ('blocked', '<u8')])
 HASH_CHUNK = 100_000
 URI_CHUNK = 50_000
+# 50,000 URIs of 4,096 characters plus quoting need about 205 MB; 100,000 UInt64 hashes
+# plus separators need under 4 MB. 256 MiB covers either largest query with margin.
+MAX_QUERY_SIZE = 256 * 1024 * 1024
 
 
 def _columns(block: np.ndarray) -> tuple[np.ndarray, ...]:

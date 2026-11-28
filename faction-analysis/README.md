@@ -58,7 +58,7 @@ It uses synthetic test data, not production data. The tests create their own tab
    FACTION_ANALYSIS_INTEGRATION_CH_HOST=127.0.0.1 FACTION_ANALYSIS_INTEGRATION_CH_PORT=18123 uv run pytest -m integration
    ```
 
-   Pytest should report 26 passed integration tests. A failure means the local check did not pass.
+   Pytest should report 28 passed integration tests. A failure means the local check did not pass.
    The command exits after the tests.
 
 5. Stop the test server, including after a failed test.
@@ -109,7 +109,7 @@ Dependencies include scikit-learn 1.7 or later and TypeSafe SDK 0.7, below 0.8.
    uv run pytest
    ```
 
-   About 300 unit tests cover the implementation, alongside 26 integration tests. Integration tests skip unless `FACTION_ANALYSIS_INTEGRATION_CH_HOST` is set.
+   304 unit tests cover the implementation, alongside 28 integration tests. Integration tests skip unless `FACTION_ANALYSIS_INTEGRATION_CH_HOST` is set.
    Use the local-server procedure above to run those tests.
 
 5. Check lint rules.
@@ -446,6 +446,8 @@ If no model exists, behavioral signals still work, but text lift is NULL.
 | `FACTION_ANALYSIS_MAX_THREADS` | `4` | `max_threads` on every query |
 | `FACTION_ANALYSIS_MAX_EXECUTION_TIME` | `3600` | `max_execution_time` in seconds on every query |
 | `FACTION_ANALYSIS_MAX_MEMORY_USAGE` | `20000000000` | `max_memory_usage` in bytes on every query (20 GB) |
+
+Every query fixes `max_query_size` at 256 MiB (268435456 bytes) to accommodate the model refresh's multi-megabyte literal `IN` lists.
 
 ### Affinity graph
 

@@ -184,6 +184,37 @@ def test_a_second_run_keeps_every_id_and_logs_no_move(tmp_path: Path) -> None:
     assert promoted(h).next_faction_id == 3
 
 
+@pytest.mark.parametrize('previous_count', [1, 2])
+def test_a_weekly_run_carries_confidence_only_for_accounts_in_the_previous_image(
+    tmp_path: Path, previous_count: int
+) -> None:
+    h = Harness(tmp_path)
+    first = h.poll('full')
+    assert first.run_id is not None
+
+    previous = h.repo.fetch_image(first.run_id)
+    previous_dids = h.dids[:previous_count]
+    previous = previous.loc[previous['did'].isin(previous_dids)].copy()
+    expected = {did: 0.2 + index / 10 for index, did in enumerate(previous_dids)}
+    previous['confidence'] = previous['did'].map(expected)
+    h.repo.run_owned[schema.MEMBERS][first.run_id] = previous
+
+    new_did = 'did:plc:ffffffffffffffffffffffff'
+    h.world.accounts.append((13, new_did, 1))
+    h.dids.append(new_did)
+    for index in range(3):
+        h.world.follows.append((13, index + 1, 20_000 + index, int(h.now.timestamp() * 1000) - 86_400_000))
+        h.world.follows.append((index + 1, 13, 21_000 + index, int(h.now.timestamp() * 1000) - 86_400_000))
+
+    h.advance(7)
+    second = h.poll()
+    assert second.status == 'promoted', second.reason
+    assert second.run_id is not None
+    members = h.repo.fetch_image(second.run_id).set_index('did')
+    assert members.loc[list(previous_dids), 'confidence'].to_dict() == expected
+    assert pd.isna(members.loc[new_did, 'confidence'])
+
+
 def test_a_split_keeps_the_id_with_one_part_and_records_the_other(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     first = h.poll('full')

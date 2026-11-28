@@ -195,12 +195,18 @@ def _choose_two(values: np.ndarray) -> np.ndarray:
 
 
 def adjusted_rand_index(first: np.ndarray, second: np.ndarray) -> float:
-    """Adjusted Rand index of two label vectors over the same items. ``1.0`` for identical partitions."""
+    """Adjusted Rand index of two label vectors over the same items.
+
+    ``1.0`` for identical partitions. One item makes no pair, so the index has no denominator. It is ``1.0``
+    then, here and in scikit-learn.
+    """
     first = np.asarray(first, dtype=np.int64)
     second = np.asarray(second, dtype=np.int64)
     n = int(len(first))
     if n == 0 or len(second) != n:
         raise ValueError('adjusted_rand_index needs two label vectors of equal, non-zero length')
+    if n == 1:
+        return 1.0
     _, a = _dense(first)
     _, b = _dense(second)
     width = int(b.max()) + 1

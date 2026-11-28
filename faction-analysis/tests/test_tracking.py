@@ -141,6 +141,12 @@ def test_adjusted_rand_index_matches_the_reference_implementation() -> None:
         adjusted_rand_index(np.array([1]), np.array([1, 2]))
 
 
+def test_adjusted_rand_index_of_one_item_is_one() -> None:
+    # One item makes no pair, so the index has no denominator. scikit-learn defines the result as 1.0.
+    assert adjusted_rand_index(np.array([4]), np.array([9])) == 1.0
+    assert adjusted_rand_score([4], [9]) == 1.0
+
+
 def test_moves_log_holds_only_changes() -> None:
     diff = diff_moves(
         np.asarray(['a', 'b', 'c', 'd']),
