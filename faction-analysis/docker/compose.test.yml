@@ -1,0 +1,28 @@
+# A ClickHouse of the version on sys2 (24.1) for the integration tests of this sidecar only.
+#
+#   docker compose -f docker/compose.test.yml up -d --wait
+#   FACTION_ANALYSIS_INTEGRATION_CH_HOST=127.0.0.1 FACTION_ANALYSIS_INTEGRATION_CH_PORT=18123 \
+#     uv run pytest -m integration
+#   docker compose -f docker/compose.test.yml down
+#
+# The server keeps its data in memory, so nothing survives the container. It listens on 18123 and never meets
+# the ClickHouse of a local osprey stack, which listens on 8123. The tests skip unless
+# FACTION_ANALYSIS_INTEGRATION_CH_HOST is set.
+services:
+  clickhouse-test:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: faction-analysis-clickhouse-test
+    restart: "no"
+    ports:
+      - "127.0.0.1:18123:8123"
+    tmpfs:
+      - /var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

@@ -23,6 +23,10 @@ No sidecar imports from `osprey_worker` or from any other sidecar.
 | [quote_overdispersion](quote_overdispersion/) | Anomalous quote-post concentration | NB volume + beta-binomial density, BH-FDR per signal | `quote_overdispersion_results` |
 | [url_cosharing](url_cosharing/) | Coordinated URL sharing | TF-IDF cosine-similarity network + density-based dismantling, Leiden (CPM) on the coordinated core | `url_cosharing_clusters` |
 | [quote_cosharing](quote_cosharing/) | Coordinated quote-posting | Leiden (CPM) on Newman-weighted co-sharing graph | `quote_cosharing_clusters` |
+| [faction-analysis](faction-analysis/) | Communities and hostility between them | Leiden on follows and reposts, stable faction IDs, behavioral and text hostility signals | `faction_analysis_*` |
+
+See [faction-analysis](faction-analysis/) for deployment requirements, faction tracking, and conflict measures.
+
 
 ## Requirements
 
