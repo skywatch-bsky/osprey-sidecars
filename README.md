@@ -25,8 +25,7 @@ No sidecar imports from `osprey_worker` or from any other sidecar.
 | [quote_cosharing](quote_cosharing/) | Coordinated quote-posting | Leiden (CPM) on Newman-weighted co-sharing graph | `quote_cosharing_clusters` |
 | [faction-analysis](faction-analysis/) | Communities and hostility between them | Leiden on follows and reposts, stable faction IDs, behavioral and text hostility signals | `faction_analysis_*` |
 
-See [faction-analysis](faction-analysis/) for deployment requirements, faction tracking, and conflict measures.
-
+See [faction-analysis](faction-analysis/README.md) for deployment requirements, faction tracking, and conflict measures. This sidecar also needs scikit-learn and a bounded TypeSafe labeling step with a TypeSafe API key. It needs Python 3.14, while the other sidecars need Python 3.11 or later.
 
 ## Requirements
 

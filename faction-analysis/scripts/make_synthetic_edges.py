@@ -1,6 +1,6 @@
 """Write a synthetic planted-partition edge file for a local scale check of the Leiden child.
 
-Each vertex belongs to one of BLOCKS equally sized blocks. Each edge joins two uniformly random members of
+Each vertex belongs to one of BLOCKS blocks. Their sizes differ by at most one. Each edge joins two uniformly random members of
 the same block with probability WITHIN_SHARE, and two uniformly random vertices otherwise.
 
 Usage: python scripts/make_synthetic_edges.py OUT.npz VERTICES BLOCKS WITHIN_SHARE DEGREE SEED

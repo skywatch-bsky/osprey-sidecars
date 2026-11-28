@@ -336,7 +336,7 @@ direction_s = (s_AB - s_BA) / (s_AB + s_BA)
 ```
 
 The hostility lifts are `pileon_lift`, `swarm_lift`, `blocks_lift`, and `text_lift`.
-The combined score requires both elevated contact and at least one elevated hostility rate.
+A combined score above one requires both elevated contact and at least one elevated hostility rate.
 It is NULL when contact lift is NULL or all hostility lifts are NULL.
 A block-only cell retains its block count, block lift, and block direction, but has NULL `conflict_score`.
 With no contact anywhere in the window, all contact-normalized values are NULL, including block lift.
@@ -386,7 +386,7 @@ The plan estimates about $2.50 at its recorded input-token price, not a current 
 `FACTION_ANALYSIS_JEV_MAX_REQUESTS` counts every request sent, including retries. The TypeSafe SDK retries are disabled.
 The sidecar allows at most three attempts per pair per refresh.
 It retries only connection failures, timeouts, rate limits, server errors, or unreadable answers.
-Between attempts, it waits for the server's requested delay or a doubling delay.
+Between attempts, it waits for the server's requested delay or a doubling delay, capped at 30 seconds.
 
 Other rejected requests, such as HTTP 400, are not retried.
 Failed attempts retain their worst-case token charge because the server may have billed them.
@@ -503,7 +503,7 @@ If no model exists, behavioral signals still work, but text lift is NULL.
 | `FACTION_ANALYSIS_MODEL_MAX_AGE_DAYS` | `28` | Age at which the model is retrained |
 | `FACTION_ANALYSIS_EXAMPLE_MIN_H` | `0.5` | Hostility at which a scored text is stored as an example |
 | `FACTION_ANALYSIS_EXAMPLE_SAMPLE_MODULUS` | `200` | One text in this many is stored as an example whatever its score |
-| `TYPESAFE_API_KEY` | none | TypeSafe API key. Set it in the environment or mount it as the compose secret file `/run/secrets/typesafe_api_key` |
+| `TYPESAFE_API_KEY` | none | TypeSafe API key. The main service also reads `/run/secrets/typesafe_api_key`. The standalone training command reads only the environment |
 
 ### Schedule and storage
 

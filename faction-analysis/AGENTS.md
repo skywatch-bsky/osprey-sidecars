@@ -11,19 +11,22 @@ plays out in.
 
 Status: implemented and tested. Unit tests and an integration suite against ClickHouse 24.1 pass. The
 deployment changes in `skywatch-osprey` (table definitions, grants, compose service) are two GitHub issues
-there, #84 and #85; their bodies are in `docs/osprey-issues/`. Evidence is in `docs/AGENT_FINDINGS.md`,
+there: [#84, tables and grants](https://github.com/skywatch-bsky/skywatch-osprey/issues/84) and
+[#85, Compose service](https://github.com/skywatch-bsky/skywatch-osprey/issues/85). Their bodies are in
+`docs/osprey-issues/`. Evidence is in `docs/AGENT_FINDINGS.md`,
 measurements in `docs/MEASUREMENT.md`.
 
 ## Contracts
 
-- **Exposes:** tables prefixed `faction_analysis_` in ClickHouse. `runs` (one row per status a run reaches;
+- **Exposes:** tables prefixed `faction_analysis_` by default in ClickHouse. `runs` (status history;
   `next_faction_id` lives here), `members` (one image per run), `member_features`, `moves` (changes only),
-  `lineage`, `factions` (registry), `faction_runs` (per-run statistics), `conflict` (cells per window), and
-  the caches `text_scores`, `jev_labels`, `scorer_dataset`.
-- **Guarantees:** every account has at most one faction per run. A faction ID means the same faction across
-  runs for as long as that faction exists, and an ID of a dissolved faction is never reused. Readers see a
-  run only through its `promoted` row. A run whose promotion was intended is completed forward and never
-  removed, so no faction ID is issued twice.
+  `lineage`, `factions` (registry), `faction_runs` (per-run statistics), `conflict` (ordered pairs including
+  the diagonal, per window), and the caches `text_scores`, `jev_labels`, `scorer_dataset`.
+- **Guarantees:** every account has at most one faction per run. Published faction IDs remain stable while
+  the faction exists and are never reused. Read run-owned rows only through distinct `promoted` run IDs:
+  status rows can repeat on retry. Intended promotions complete forward without removing their outputs.
+  Caches belong to no run and survive failed-run cleanup. Deduplicate scores by URI hash and model version,
+  labels by URI hash and prompt version, and datasets by dataset version and URI hash, taking the latest write.
 - **Expects:** `osprey_execution_results` with the `OSPREY_CLICKHOUSE_*` settings, the tables of
   `sql/001_faction_analysis.sql` with the cleanup grants, a persistent model directory, and one instance
   per host (the lock refuses a second).
@@ -32,7 +35,8 @@ measurements in `docs/MEASUREMENT.md`.
 
 - **Uses:** ClickHouse (reads the source, writes its own tables), scikit-learn for the hostility model,
   TypeSafe `jev-1.14.0` for a bounded teaching sample, OpenTelemetry (optional).
-- **Used by:** moderators through read-only `skywatch-mcp` tools. No tool exists yet.
+- **Used by**: moderators can query the tables with SQL. Read-only `skywatch-mcp` tools are planned;
+  none exists yet.
 - **Boundary:** never writes to `osprey_execution_results` or to another sidecar's tables. No imports from
   `osprey_worker` or from other sidecars. Table definitions are applied by `skywatch-osprey`.
 
@@ -61,28 +65,32 @@ measurements in `docs/MEASUREMENT.md`.
   attempt: the SDK's own retries are off, a pair is sent at most three times, and paid answers reach the
   cache in batches while the labelling runs.
 - **Publication safety is forward only.** All output is written before the intent file is installed. The
-  intent file is the source of truth, and a run it names is completed by re-sending its rows.
+  intent file is the source of truth; recovery re-sends its run-status rows. An unreadable intent stops cleanup.
 - **The first version is the weekly refresh and the monthly full scan** (operator). The conflict monitor,
   mediator-versus-agitator estimates and cascade summaries come later.
 
 ## Invariants
 
-- The functional core does no I/O and does not import OpenTelemetry: `config.py`, `queries.py`, `graph.py`,
-  `partition.py`, `tracking.py`, `features.py`, `conflict.py`, `labels.py`, `model.py`, `runstate.py`,
-  `promotion.py`, `schedule.py`, `schema.py`.
+- The functional core does no database, file or network I/O and does not import OpenTelemetry: `config.py`,
+  `queries.py`, `graph.py`, `partition.py`, `tracking.py`, `features.py`, `conflict.py`, `labels.py`, `model.py`,
+  `runstate.py`, `promotion.py`, `schedule.py`, `schema.py`, `measurement_rules.py`. `config.py` also reads
+  the process environment.
 - Telemetry carries no DIDs, handles, faction ids, URIs, query text or exception messages. Logs may carry a run ID.
 - Every source query filters `__timestamp`. A follow or a block exists from its create until its delete.
 
 ## Key files
 
-- `pipeline.py` — one run: the order of the stages, promotion, failure recovery
-- `main.py` — lock, polling loop, `--once`, `--kind`, `--dry-run`, `--measure`
-- `sql/001_faction_analysis.sql` — the table definitions; also the body of issue #84
+All module paths are under `src/faction_analysis/`; the core modules are listed above.
+- `pipeline.py`, `main.py` — stages, recovery and polling; `--once`, `--kind`, `--dry-run`, `--measure`
+- `db.py`, `lock.py`, `model_store.py` — ClickHouse I/O, local lock and durable intent, model persistence
+- `train.py`, `jev.py`, `export_dataset.py` — model refresh, bounded teaching requests, text dataset export
+- `measure.py`, `telemetry.py`, `__init__.py` — measurement CLI, telemetry, package marker
+- `sql/001_faction_analysis.sql` — table definitions embedded in issue #84
 
 ## Gotchas
 
-- Every feature column in the source is `Nullable`. `quote_cosharing` runs Leiden without a seed: do not
-  copy that call. `url_cosharing`'s evolution tracking assigns new IDs on every merge and split.
+- Source scalar feature columns are `Nullable`; `FacetTagList` and `PostLanguages` are arrays.
+  `quote_cosharing` runs Leiden without a seed; `url_cosharing` assigns new IDs on every merge and split.
 - **A block exists from its create until its delete, like a follow.** Both the conflict layer and the
   training labels subtract block deletes (`graph.superseded_mask`). A training negative also needs no block
   inside the whole horizon (`labels.negative_mask`).
