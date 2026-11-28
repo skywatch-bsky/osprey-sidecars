@@ -8,3 +8,4 @@ dist/
 build/
 .env
 uv.lock
+!faction-analysis/uv.lock

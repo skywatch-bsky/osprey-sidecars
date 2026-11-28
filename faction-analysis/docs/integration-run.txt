@@ -1,0 +1,57 @@
+Integration run of the faction-analysis sidecar against a local ClickHouse 24.1 (the version on the
+production host), on 2026-11-28. The server is the one `docker/compose.test.yml` starts. The command, run
+inside `faction-analysis/`:
+
+    FACTION_ANALYSIS_INTEGRATION_CH_HOST=127.0.0.1 FACTION_ANALYSIS_INTEGRATION_CH_PORT=18123 \
+      uv run pytest -m integration -v
+
+What follows is its output, preceded by the date, the version the server reported and the container state.
+
+Sat Nov 28 11:45:02 AM EST 2026
+24.1.8.22
+
+
+NAME                               IMAGE                               COMMAND            SERVICE           CREATED          STATUS                    PORTS
+faction-analysis-clickhouse-test   clickhouse/clickhouse-server:24.1   "/entrypoint.sh"   clickhouse-test   23 minutes ago   Up 23 minutes (healthy)   9000/tcp, 9009/tcp, 127.0.0.1:18123->8123/tcp
+
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0 -- /home/scarndp/dev/atproto-dev/skywatch/osprey-sidecars/faction-analysis/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/scarndp/dev/atproto-dev/skywatch/osprey-sidecars/faction-analysis
+configfile: pyproject.toml
+testpaths: tests
+plugins: mock-3.17.0, anyio-4.16.0
+collecting ... collected 332 items / 304 deselected / 28 selected
+
+tests/test_integration_clickhouse.py::test_the_ddl_carries_a_ttl_for_every_table_but_runs PASSED [  3%]
+tests/test_integration_clickhouse.py::test_end_to_end_full_then_weekly PASSED [  7%]
+tests/test_integration_clickhouse.py::test_interactions_uppercase_matches_ascii_count PASSED [ 10%]
+tests/test_integration_clickhouse.py::test_classifier_lookup_chunks_fit_clickhouse_query_size PASSED [ 14%]
+tests/test_integration_clickhouse.py::test_extraction_to_membership_preserves_dids PASSED [ 17%]
+tests/test_integration_clickhouse.py::test_cached_scores_follow_a_split PASSED [ 21%]
+tests/test_integration_clickhouse.py::test_failed_run_after_each_write_stage_leaves_state_unchanged[after_write_conflict-write_conflict] PASSED [ 25%]
+tests/test_integration_clickhouse.py::test_failed_run_after_each_write_stage_leaves_state_unchanged[after_write_features-write_features] PASSED [ 28%]
+tests/test_integration_clickhouse.py::test_failed_run_after_each_write_stage_leaves_state_unchanged[after_write_members-write_members] PASSED [ 32%]
+tests/test_integration_clickhouse.py::test_failed_run_after_each_write_stage_leaves_state_unchanged[after_write_registry-write_registry] PASSED [ 35%]
+tests/test_integration_clickhouse.py::test_retry_in_same_second_gets_distinct_run_id PASSED [ 39%]
+tests/test_integration_clickhouse.py::test_promotion_committed_but_response_lost PASSED [ 42%]
+tests/test_integration_clickhouse.py::test_delayed_commit_is_left_unresolved_and_nothing_is_removed PASSED [ 46%]
+tests/test_integration_clickhouse.py::test_unresolved_run_blocks_new_runs PASSED [ 50%]
+tests/test_integration_clickhouse.py::test_crash_after_promoting_recovers_on_restart PASSED [ 53%]
+tests/test_integration_clickhouse.py::test_crash_before_first_marker_is_visible PASSED [ 57%]
+tests/test_integration_clickhouse.py::test_first_marker_commits_after_empty_reread PASSED [ 60%]
+tests/test_integration_clickhouse.py::test_late_promotion_commit_is_harmless PASSED [ 64%]
+tests/test_integration_clickhouse.py::test_torn_intent_write_leaves_nothing[temp_written] PASSED [ 67%]
+tests/test_integration_clickhouse.py::test_torn_intent_write_leaves_nothing[temp_fsynced] PASSED [ 71%]
+tests/test_integration_clickhouse.py::test_torn_intent_write_after_the_rename_leaves_a_complete_file PASSED [ 75%]
+tests/test_integration_clickhouse.py::test_unreadable_intent_fails_closed PASSED [ 78%]
+tests/test_integration_clickhouse.py::test_cleanup_preserves_promoted_runs PASSED [ 82%]
+tests/test_integration_clickhouse.py::test_startup_after_success_is_allowed PASSED [ 85%]
+tests/test_integration_clickhouse.py::test_immediate_retry_after_failure_is_allowed PASSED [ 89%]
+tests/test_integration_clickhouse.py::test_paid_labels_survive_a_failed_run PASSED [ 92%]
+tests/test_integration_clickhouse.py::test_duplicate_cache_writes_aggregate_once PASSED [ 96%]
+tests/test_integration_clickhouse.py::test_dataset_keeps_each_example_once PASSED [100%]
+
+===================== 28 passed, 304 deselected in 18.66s ======================
+
+pytest exit code: 0
